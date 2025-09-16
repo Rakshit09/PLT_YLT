@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block content %}
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="#">PLT to YLT Converter</a>
+        <div class="navbar-nav ms-auto">
+            <span class="navbar-text me-3">
+                <i class="fas fa-user"></i> {{ username }}
+            </span>
+            <a class="nav-link" href="/logout">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </a>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <ul class="nav nav-tabs" id="conversionTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="csv-tab" data-bs-toggle="tab" 
+                            data-bs-target="#csv" type="button">
+                        <i class="fas fa-file-csv"></i> CSV Conversion
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="sql-tab" data-bs-toggle="tab" 
+                            data-bs-target="#sql" type="button">
+                        <i class="fas fa-database"></i> SQL Conversion
+                    </button>
+                </li>
+            </ul>
+            
+            <div class="tab-content mt-3" id="conversionTabContent">
+                <!-- CSV Tab -->
+                <div class="tab-pane fade show active" id="csv" role="tabpanel">
+                    <div class="card">
+                        <div class="card-header bg-light">
+                            <h5><i class="fas fa-file-csv"></i> CSV PLT to YLT Conversion</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="csvForm">
+                                <div class="mb-3">
+                                    <label for="csvFiles" class="form-label">Select PLT CSV Files</label>
+                                    <input type="file" class="form-control" id="csvFiles" 
+                                           accept=".csv" multiple required>
+                                    <small class="text-muted">You can select multiple CSV files</small>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="numSimulations" class="form-label">Number of Simulations (optional)</label>
+                                    <input type="number" class="form-control" id="numSimulations" 
+                                           placeholder="Leave empty to calculate from max year">
+                                    <small class="text-muted">Used to calculate probability (1/num_simulations)</small>
+                                </div>
+                                
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-exchange-alt"></i> Convert to YLT
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- SQL Tab -->
+                <div class="tab-pane fade" id="sql" role="tabpanel">
+                    <div class="card">
+                        <div class="card-header bg-light">
+                            <h5><i class="fas fa-database"></i> SQL PLT to YLT Conversion</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="sqlForm">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="sqlServer" class="form-label">SQL Server</label>
+                                            <input type="text" class="form-control" id="sqlServer" 
+                                                   placeholder="e.g., GREAZUK1DB251P" required>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="sqlDatabase" class="form-label">Database</label>
+                                            <input type="text" class="form-control" id="sqlDatabase" 
+                                                   placeholder="e.g., 2523392_VHV_2026_Rnwl_RDM" required>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <div class="mb-3">
+                                            <label for="sqlUsername" class="form-label">Username</label>
+                                            <input type="text" class="form-control" id="sqlUsername">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="mb-3">
+                                            <label for="sqlPassword" class="form-label">Password</label>
+                                            <input type="password" class="form-control" id="sqlPassword">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="mb-3">
+                                            <label for="sqlDomain" class="form-label">Domain (optional)</label>
+                                            <input type="text" class="form-control" id="sqlDomain">
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <hr>
+                                
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="tableName" class="form-label">Table Name</label>
+                                            <input type="text" class="form-control" id="tableName" 
+                                                   placeholder="e.g., WS_COM_DE_HD_LowVuln_PLT_GR" required>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="mb-3">
+                                            <label for="analysisNo" class="form-label">Analysis No (optional)</label>
+                                            <input type="text" class="form-control" id="analysisNo">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="mb-3">
+                                            <label for="perspective" class="form-label">Perspective (optional)</label>
+                                            <input type="text" class="form-control" id="perspective">
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-exchange-alt"></i> Convert to YLT
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Results Section -->
+            <div class="mt-4" id="resultsSection" style="display: none;">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <h5><i class="fas fa-check-circle"></i> Conversion Results</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="resultsContent"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Loading Spinner -->
+            <div class="text-center mt-4" id="loadingSpinner" style="display: none;">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Processing...</span>
+                </div>
+                <p class="mt-2">Converting PLT to YLT format...</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/converter.js') }}"></script>
+{% endblock %}
