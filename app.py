@@ -2,7 +2,7 @@ import os
 import io
 import logging
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for, Response
 import pandas as pd
 import numpy as np
 import sqlalchemy as sa
@@ -15,6 +15,8 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here-change-in-production')
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 * 1024  # 5GB max file size
 app.config['SESSION_TYPE'] = 'filesystem'
+
+EDM_SERVERS = ('GREAZUK1DB051P', 'GREAZUK1DB101P', 'GREAZUK1DB181P', 'GREAZUK1DB201P', 'GREAZUK1DB251P', '103db9bcc5307a1d669c5f0946a36dfc.databridge.rms-pe.com,1333')
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -272,7 +274,7 @@ def dashboard():
     """Main dashboard with SQL and CSV tabs"""
     if 'credentials' not in session:
         return redirect(url_for('index'))
-    return render_template('dashboard.html')
+    return render_template('dashboard.html', edm_servers=EDM_SERVERS)
 
 @app.route('/convert_sql', methods=['POST'])
 def convert_sql():
@@ -343,6 +345,47 @@ def convert_sql():
     except Exception as e:
         logger.error(f"SQL conversion error: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+
+@app.route('/get_databases')
+def get_databases():
+    server = request.args.get('server')
+    logger.info(f"Received request for databases from server: {server}")
+    
+    if not server:
+        logger.error("No server provided in request")
+        return Response('<option value="">Please select a server</option>', mimetype='text/html')
+    
+    try:
+        creds = session.get('credentials')
+        if not creds or not creds.get('username') or not creds.get('password'):
+            logger.error("No database credentials found in session")
+            return Response('<option value="">Authentication error: No credentials</option>', mimetype='text/html', status=401)
+        
+        # Connect to master db to get list of other DBs
+        engine = get_engine(server, 'master', creds.get('username'), creds.get('password'), creds.get('domain'))
+        if engine is None:
+            raise Exception("Failed to get database engine for server discovery.")
+
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT name FROM sys.databases WHERE database_id > 4 ORDER BY name"))
+            databases = [row[0] for row in result]
+        
+        options = ['<option value="">-- Select Database --</option>']
+        options.extend([f'<option value="{db}">{db}</option>' for db in databases])
+        
+        logger.info(f"Successfully fetched {len(databases)} databases")
+        return Response('\n'.join(options), mimetype='text/html')
+        
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Database error in get_databases: {error_msg}", exc_info=True)
+        
+        if "Login failed for user" in error_msg:
+            return Response('<option value="">Authentication failed</option>', mimetype='text/html', status=401)
+        elif "connection failed" in error_msg or "Unable to connect" in error_msg:
+            return Response('<option value="">Connection failed</option>', mimetype='text/html', status=503)
+        else:
+            return Response(f'<option value="">Error fetching databases</option>', mimetype='text/html', status=500)
 
 @app.route('/convert_csv', methods=['POST'])
 def convert_csv():

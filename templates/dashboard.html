@@ -59,8 +59,12 @@
                                                 <label for="sqlServer" class="form-label">
                                                     Server <span class="text-danger">*</span>
                                                 </label>
-                                                <input type="text" class="form-control" id="sqlServer" 
-                                                       placeholder="e.g., GREAZUK1DB251P" required>
+                                                <select class="form-control" id="sqlServer" required>
+                                                    <option value="">-- Select Server --</option>
+                                                    {% for server in edm_servers %}
+                                                    <option value="{{ server }}">{{ server }}</option>
+                                                    {% endfor %}
+                                                </select>
                                             </div>
                                         </div>
                                         <div class="col-md-6">
@@ -68,8 +72,18 @@
                                                 <label for="sqlDatabase" class="form-label">
                                                     Database <span class="text-danger">*</span>
                                                 </label>
-                                                <input type="text" class="form-control" id="sqlDatabase" 
-                                                       placeholder="e.g., GRe_RuV_2026Rnwl_Modelling_WS_RDM" required>
+                                                <div class="dropdown searchable-select-container" id="database-container">
+                                                    <button class="form-control btn dropdown-toggle text-start" type="button" data-bs-toggle="dropdown" aria-expanded="false" disabled>
+                                                        -- Select a server first --
+                                                    </button>
+                                                    <div class="dropdown-menu w-100 p-2">
+                                                        <input type="text" class="form-control" id="database-search" placeholder="Search...">
+                                                        <div id="database-options" class="mt-2" style="max-height: 200px; overflow-y: auto;"></div>
+                                                    </div>
+                                                    <select id="sqlDatabase" class="form-control" required disabled style="display: none;">
+                                                        <option value="">-- Select a server first --</option>
+                                                    </select>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -97,7 +111,7 @@
 
                                     <div class="alert alert-info">
                                         <i class="fas fa-info-circle"></i> 
-                                        Query: SELECT * FROM [database].[plt].[rdm_port] WHERE ANLSID=X AND PERSPCODE='Y'
+                                        Query: SELECT * FROM [your_table] WHERE ANLSID=X AND PERSPCODE='Y'
                                     </div>
 
                                     <button type="submit" class="btn btn-primary">
@@ -166,6 +180,78 @@
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
         let currentResultData = null;
+
+        $(document).ready(function() {
+            const sqlServer = $('#sqlServer');
+            const dbContainer = $('#database-container');
+            const dbButton = dbContainer.find('.dropdown-toggle');
+            const dbSearch = dbContainer.find('#database-search');
+            const dbOptions = dbContainer.find('#database-options');
+            const dbSelect = dbContainer.find('#sqlDatabase');
+
+            function populateDatabaseOptions(searchTerm = '') {
+                dbOptions.empty();
+                let optionsFound = false;
+                dbSelect.find('option').each(function() {
+                    const option = $(this);
+                    if (option.val() && option.text().toLowerCase().includes(searchTerm)) {
+                        dbOptions.append(`<a class="dropdown-item" href="#" data-value="${option.val()}">${option.text()}</a>`);
+                        optionsFound = true;
+                    }
+                });
+                if (!optionsFound && dbSelect.find('option').length > 1) {
+                    dbOptions.append('<span class="dropdown-item-text text-muted">No results found</span>');
+                }
+            }
+
+            sqlServer.on('change', function() {
+                const server = $(this).val();
+                dbButton.text('Loading...').prop('disabled', true);
+                dbSelect.html('<option value="">-- Select a server first --</option>');
+                dbOptions.empty();
+
+                if (server) {
+                    $.ajax({
+                        url: `/get_databases?server=${encodeURIComponent(server)}`,
+                        type: 'GET',
+                        success: function(data) {
+                            dbSelect.html(data);
+                            dbButton.text('-- Select Database --').prop('disabled', false);
+                        },
+                        error: function() {
+                            dbSelect.html('<option value="">Error loading databases</option>');
+                            dbButton.text('Error loading').prop('disabled', true);
+                        }
+                    });
+                } else {
+                    dbButton.text('-- Select a server first --').prop('disabled', true);
+                }
+            });
+            
+            dbContainer.on('shown.bs.dropdown', function () {
+                populateDatabaseOptions();
+                dbSearch.val('').focus();
+            });
+
+            dbSearch.on('input', function() {
+                populateDatabaseOptions($(this).val().toLowerCase());
+            });
+
+            dbOptions.on('click', '.dropdown-item', function(e) {
+                e.preventDefault();
+                const value = $(this).data('value');
+                const text = $(this).text();
+                
+                dbSelect.val(value);
+                dbButton.text(text);
+                
+                // Manually hide dropdown
+                var dropdown = bootstrap.Dropdown.getInstance(dbButton);
+                if (dropdown) {
+                    dropdown.hide();
+                }
+            });
+        });
 
         // SQL Form Submission
         $('#sqlForm').on('submit', function(e) {
