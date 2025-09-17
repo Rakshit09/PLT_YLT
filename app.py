@@ -28,9 +28,7 @@ def get_engine(server: str, database: str, username: str, password: str, domain:
     try:
         if server == 'DATABRIDGE':
             server = DATABRIDGE
-            print (username)
-            print (password)
-            print (domain)
+
 
         # Handle domain authentication
         if domain and domain.strip():
@@ -447,7 +445,10 @@ def get_anlsids():
         with engine.connect() as conn:
             for schema in schemas_to_try:
                 try:
-                    query = text(f"SELECT DISTINCT ANLSID FROM [{database}].[{schema}].[rdm_anlsevent] ORDER BY ANLSID")
+                    if server == 'DATABRIDGE':
+                        query = text(f"SELECT DISTINCT ANLSID FROM [{database}].[plt].[rdm_anlsregions]  ORDER BY ANLSID") # or should be rdm_port instead?
+                    else:
+                        query = text(f"SELECT DISTINCT ANLSID FROM [{database}].[{schema}].[rdm_anlsevent] ORDER BY ANLSID")
                     result = conn.execute(query)
                     anlsids = [row[0] for row in result]
                     logger.info(f"Found ANLSIDs in schema '{schema}'")
@@ -492,7 +493,10 @@ def get_perspcodes():
         with engine.connect() as conn:
             for schema in schemas_to_try:
                 try:
-                    query = text(f"SELECT PERSPCODE FROM [{database}].[{schema}].[rdm_anlspersp] WHERE ANLSID = :anlsid ORDER BY PERSPCODE")
+                    if server == 'DATABRIDGE':
+                        query = text(f"SELECT DISTINCT PERSPCODE FROM [{database}].[plt].[rdm_port] WHERE ANLSID = :anlsid ORDER BY PERSPCODE")
+                    else:
+                        query = text(f"SELECT DISTINCT PERSPCODE FROM [{database}].[{schema}].[rdm_anlspersp] WHERE ANLSID = :anlsid ORDER BY PERSPCODE")
                     result = conn.execute(query, {'anlsid': anlsid})
                     perspcodes = [row[0] for row in result]
                     logger.info(f"Found PERSPCODEs in schema '{schema}' for ANLSID {anlsid}")
@@ -578,4 +582,4 @@ def logout():
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0',port=5000)
