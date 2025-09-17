@@ -16,7 +16,7 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here-change-
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 * 1024  # 5GB max file size
 app.config['SESSION_TYPE'] = 'filesystem'
 
-DATABRIDGE = '103db9bcc5307a1d669c5f0946a36dfc.databridge.rms-pe.com,1333'
+DATABRIDGE = '103db9bcc5307a1d669c5f0946a36dfc.databridge.rms-pe.com'
 EDM_SERVERS = ('GREAZUK1DB051P', 'GREAZUK1DB101P', 'GREAZUK1DB181P', 'GREAZUK1DB201P', 'GREAZUK1DB251P', 'DATABRIDGE')
 
 
@@ -26,9 +26,11 @@ logger = logging.getLogger(__name__)
 def get_engine(server: str, database: str, username: str, password: str, domain: str = None):
     """Create SQL Server connection engine"""
     try:
-        # Map friendly name 'DATABRIDGE' to its actual server address
         if server == 'DATABRIDGE':
             server = DATABRIDGE
+            print (username)
+            print (password)
+            print (domain)
 
         # Handle domain authentication
         if domain and domain.strip():
@@ -51,7 +53,7 @@ def get_engine(server: str, database: str, username: str, password: str, domain:
             host=host,
             port=port,
             database=database,
-            query={"timeout": "0", "login_timeout": "300", "charset": "utf8"}
+            query={"timeout": "30"}
         )
         
         engine = sa.create_engine(
@@ -131,7 +133,7 @@ def convert_csv_plt_to_ylt(df):
         
         # Add escape-delay header
         header_row = pd.DataFrame({
-            'intYear': ['// escape-delay'],
+            'intYear': [''],
             'dblLoss': [''],
             'CAT': [''],
             'zero': [''],
@@ -576,4 +578,4 @@ def logout():
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000)

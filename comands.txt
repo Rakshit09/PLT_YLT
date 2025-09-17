@@ -1,0 +1,1 @@
+pyinstaller --onedir --add-data "templates;templates" --add-data "static;static" --icon=icon.ico  --hidden-import="pymssql" --hidden-import="sqlalchemy.dialects.mssql" --hidden-import="pkg_resources.py2_warn" --name "PLT_TLT_converter" run.py --runtime-hook add_lib.py
