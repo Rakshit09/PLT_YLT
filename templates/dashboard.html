@@ -15,7 +15,10 @@
             <a class="navbar-brand" href="#">
                 <i class="fas fa-exchange-alt"></i> PLT to YLT Converter
             </a>
-            <div class="navbar-nav ms-auto">
+            <div class="navbar-nav ms-auto d-flex align-items-center">
+                <span class="navbar-text me-3 text-dark">
+                    Logged in as: <strong>{{ session.credentials.username }}</strong>
+                </span>
                 <a class="nav-link" href="/logout">
                     <i class="fas fa-sign-out-alt"></i> Logout
                 </a>
@@ -94,8 +97,18 @@
                                                 <label for="anlsid" class="form-label">
                                                     ANLSID <small class="text-muted">(optional)</small>
                                                 </label>
-                                                <input type="text" class="form-control" id="anlsid" 
-                                                       placeholder="e.g., 9">
+                                                <div class="dropdown searchable-select-container" id="anlsid-container">
+                                                    <button class="form-control btn dropdown-toggle text-start" type="button" data-bs-toggle="dropdown" aria-expanded="false" disabled>
+                                                        -- Select database first --
+                                                    </button>
+                                                    <div class="dropdown-menu w-100 p-2">
+                                                        <input type="text" class="form-control" id="anlsid-search" placeholder="Search...">
+                                                        <div id="anlsid-options" class="mt-2" style="max-height: 200px; overflow-y: auto;"></div>
+                                                    </div>
+                                                    <select id="anlsid" class="form-control" disabled style="display: none;">
+                                                        <option value="">-- Select database first --</option>
+                                                    </select>
+                                                </div>
                                             </div>
                                         </div>
                                         <div class="col-md-6">
@@ -103,15 +116,25 @@
                                                 <label for="perspcode" class="form-label">
                                                     PERSPCODE <small class="text-muted">(optional)</small>
                                                 </label>
-                                                <input type="text" class="form-control" id="perspcode" 
-                                                       placeholder="e.g., GR">
+                                                <div class="dropdown searchable-select-container" id="perspcode-container">
+                                                    <button class="form-control btn dropdown-toggle text-start" type="button" data-bs-toggle="dropdown" aria-expanded="false" disabled>
+                                                        -- Select ANLSID first --
+                                                    </button>
+                                                    <div class="dropdown-menu w-100 p-2">
+                                                        <input type="text" class="form-control" id="perspcode-search" placeholder="Search...">
+                                                        <div id="perspcode-options" class="mt-2" style="max-height: 200px; overflow-y: auto;"></div>
+                                                    </div>
+                                                    <select id="perspcode" class="form-control" disabled style="display: none;">
+                                                        <option value="">-- Select ANLSID first --</option>
+                                                    </select>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
 
                                     <div class="alert alert-info">
                                         <i class="fas fa-info-circle"></i> 
-                                        Query: SELECT * FROM [your_table] WHERE ANLSID=X AND PERSPCODE='Y'
+                                        Query: SELECT * FROM [db].[schema].[rdm_port] WHERE ANLSID=X AND PERSPCODE='Y'
                                     </div>
 
                                     <button type="submit" class="btn btn-primary">
@@ -188,6 +211,18 @@
             const dbSearch = dbContainer.find('#database-search');
             const dbOptions = dbContainer.find('#database-options');
             const dbSelect = dbContainer.find('#sqlDatabase');
+            
+            const anlsidContainer = $('#anlsid-container');
+            const anlsidButton = anlsidContainer.find('.dropdown-toggle');
+            const anlsidSearch = anlsidContainer.find('#anlsid-search');
+            const anlsidOptions = anlsidContainer.find('#anlsid-options');
+            const anlsidSelect = $('#anlsid');
+
+            const perspcodeContainer = $('#perspcode-container');
+            const perspcodeButton = perspcodeContainer.find('.dropdown-toggle');
+            const perspcodeSearch = perspcodeContainer.find('#perspcode-search');
+            const perspcodeOptions = perspcodeContainer.find('#perspcode-options');
+            const perspcodeSelect = $('#perspcode');
 
             function populateDatabaseOptions(searchTerm = '') {
                 dbOptions.empty();
@@ -201,6 +236,36 @@
                 });
                 if (!optionsFound && dbSelect.find('option').length > 1) {
                     dbOptions.append('<span class="dropdown-item-text text-muted">No results found</span>');
+                }
+            }
+
+            function populateAnlsidOptions(searchTerm = '') {
+                anlsidOptions.empty();
+                let optionsFound = false;
+                anlsidSelect.find('option').each(function() {
+                    const option = $(this);
+                    if (option.val() && String(option.text()).toLowerCase().includes(searchTerm)) {
+                        anlsidOptions.append(`<a class="dropdown-item" href="#" data-value="${option.val()}">${option.text()}</a>`);
+                        optionsFound = true;
+                    }
+                });
+                if (!optionsFound && anlsidSelect.find('option').length > 1) {
+                    anlsidOptions.append('<span class="dropdown-item-text text-muted">No results found</span>');
+                }
+            }
+
+            function populatePerspcodeOptions(searchTerm = '') {
+                perspcodeOptions.empty();
+                let optionsFound = false;
+                perspcodeSelect.find('option').each(function() {
+                    const option = $(this);
+                    if (option.val() && option.text().toLowerCase().includes(searchTerm)) {
+                        perspcodeOptions.append(`<a class="dropdown-item" href="#" data-value="${option.val()}">${option.text()}</a>`);
+                        optionsFound = true;
+                    }
+                });
+                if (!optionsFound && perspcodeSelect.find('option').length > 1) {
+                    perspcodeOptions.append('<span class="dropdown-item-text text-muted">No results found</span>');
                 }
             }
 
@@ -242,11 +307,114 @@
                 const value = $(this).data('value');
                 const text = $(this).text();
                 
-                dbSelect.val(value);
+                dbSelect.val(value).trigger('change'); // Set value and trigger change
                 dbButton.text(text);
                 
                 // Manually hide dropdown
-                var dropdown = bootstrap.Dropdown.getInstance(dbButton);
+                var dropdown = bootstrap.Dropdown.getInstance(dbButton[0]);
+                if (dropdown) {
+                    dropdown.hide();
+                }
+            });
+
+            dbSelect.on('change', function() {
+                anlsidButton.text('-- Select database first --').prop('disabled', true);
+                anlsidSelect.html('<option value="">-- Select database first --</option>');
+                anlsidOptions.empty();
+                perspcodeButton.text('-- Select ANLSID first --').prop('disabled', true);
+                perspcodeSelect.html('<option value="">-- Select ANLSID first --</option>');
+                perspcodeOptions.empty();
+                
+                const server = sqlServer.val();
+                const database = $(this).val();
+
+                if (server && database) {
+                    anlsidButton.text('Loading...').prop('disabled', true);
+                    $.ajax({
+                        url: `/get_anlsids?server=${encodeURIComponent(server)}&database=${encodeURIComponent(database)}`,
+                        type: 'GET',
+                        success: function(data) {
+                            anlsidSelect.html(data);
+                            anlsidButton.text(anlsidSelect.find('option:first').text()).prop('disabled', false);
+                        },
+                        error: function() {
+                            anlsidSelect.html('<option value="">Error loading ANLSIDs</option>');
+                            anlsidButton.text('Error loading').prop('disabled', true);
+                        }
+                    });
+                }
+            });
+
+            anlsidContainer.on('shown.bs.dropdown', function () {
+                populateAnlsidOptions();
+                anlsidSearch.val('').focus();
+            });
+
+            anlsidSearch.on('input', function() {
+                populateAnlsidOptions($(this).val().toLowerCase());
+            });
+
+            anlsidOptions.on('click', '.dropdown-item', function(e) {
+                e.preventDefault();
+                const value = $(this).data('value');
+                const text = $(this).text();
+                
+                anlsidSelect.val(value).trigger('change');
+                anlsidButton.text(text);
+                
+                var dropdown = bootstrap.Dropdown.getInstance(anlsidButton[0]);
+                if (dropdown) {
+                    dropdown.hide();
+                }
+            });
+
+            anlsidSelect.on('change', function() {
+                perspcodeButton.text('-- Select ANLSID first --').prop('disabled', true);
+                perspcodeSelect.html('<option value="">-- Select ANLSID first --</option>');
+                perspcodeOptions.empty();
+
+                const server = sqlServer.val();
+                const database = dbSelect.val();
+                const anlsid = $(this).val();
+
+                if (server && database && anlsid) {
+                    perspcodeButton.text('Loading...').prop('disabled', true);
+                    $.ajax({
+                        url: `/get_perspcodes?server=${encodeURIComponent(server)}&database=${encodeURIComponent(database)}&anlsid=${encodeURIComponent(anlsid)}`,
+                        type: 'GET',
+                        success: function(data) {
+                            perspcodeSelect.html(data);
+                            perspcodeButton.text(perspcodeSelect.find('option:first').text()).prop('disabled', false);
+                        },
+                        error: function() {
+                            perspcodeSelect.html('<option value="">Error loading PERSPCODEs</option>');
+                            perspcodeButton.text('Error loading').prop('disabled', true);
+                        }
+                    });
+                } else {
+                    perspcodeButton.text('-- All PERSPCODEs (optional) --').prop('disabled', false);
+                    perspcodeSelect.html('<option value="">-- All PERSPCODEs (optional) --</option>');
+                }
+            });
+
+            perspcodeContainer.on('shown.bs.dropdown', function () {
+                populatePerspcodeOptions();
+                perspcodeSearch.val('').focus();
+            });
+
+            perspcodeSearch.on('input', function() {
+                populatePerspcodeOptions($(this).val().toLowerCase());
+            });
+
+            perspcodeOptions.on('click', '.dropdown-item', function(e) {
+                e.preventDefault();
+                const value = $(this).data('value');
+                const text = $(this).text();
+                
+                perspcodeSelect.val(value).trigger('change');
+                perspcodeButton.text(text);
+                
+                var dropdown = bootstrap.Dropdown.getInstance(perspcodeButton[0]);
                 if (dropdown) {
                     dropdown.hide();
                 }

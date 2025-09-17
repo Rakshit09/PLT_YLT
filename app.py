@@ -8,7 +8,7 @@ import numpy as np
 import sqlalchemy as sa
 from sqlalchemy import create_engine, text, URL
 from dotenv import load_dotenv
-
+from sqlalchemy.exc import ProgrammingError
 load_dotenv()
 
 app = Flask(__name__)
@@ -16,7 +16,9 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here-change-
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 * 1024  # 5GB max file size
 app.config['SESSION_TYPE'] = 'filesystem'
 
-EDM_SERVERS = ('GREAZUK1DB051P', 'GREAZUK1DB101P', 'GREAZUK1DB181P', 'GREAZUK1DB201P', 'GREAZUK1DB251P', '103db9bcc5307a1d669c5f0946a36dfc.databridge.rms-pe.com,1333')
+DATABRIDGE = '103db9bcc5307a1d669c5f0946a36dfc.databridge.rms-pe.com,1333'
+EDM_SERVERS = ('GREAZUK1DB051P', 'GREAZUK1DB101P', 'GREAZUK1DB181P', 'GREAZUK1DB201P', 'GREAZUK1DB251P', 'DATABRIDGE')
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,6 +26,10 @@ logger = logging.getLogger(__name__)
 def get_engine(server: str, database: str, username: str, password: str, domain: str = None):
     """Create SQL Server connection engine"""
     try:
+        # Map friendly name 'DATABRIDGE' to its actual server address
+        if server == 'DATABRIDGE':
+            server = DATABRIDGE
+
         # Handle domain authentication
         if domain and domain.strip():
             username = f"{domain}\\{username}"
@@ -142,114 +148,131 @@ def convert_csv_plt_to_ylt(df):
         raise
 
 def convert_sql_plt_to_ylt(engine, database, anlsid=None, perspcode=None):
-    """Convert PLT from SQL to YLT IFM format from plt.rdm_port table"""
-    try:
-        # Build query for plt.rdm_port table
-        query = f"SELECT * FROM [{database}].[plt].[rdm_port]"
-        conditions = []
-        
-        if anlsid and anlsid.strip():
-            conditions.append(f"ANLSID = {anlsid}")
-        
-        if perspcode and perspcode.strip():
-            conditions.append(f"PERSPCODE = '{perspcode}'")
-        
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-        
-        logger.info(f"Executing query: {query}")
-        
-        # **FIX**: Read data from SQL in chunks to prevent timeouts on large datasets
-        chunks = []
-        for chunk in pd.read_sql_query(text(query), engine, chunksize=250000):
-            chunks.append(chunk)
-        df = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
-        
-        if df.empty:
-            raise ValueError(f"Query returned no data. Check your parameters (ANLSID, PERSPCODE) and table contents. Query: {query}")
-        
-        logger.info(f"Retrieved {len(df)} rows from database")
-        logger.info(f"Columns found: {df.columns.tolist()}")
-        
-        # Create YLT format based on your SQL script structure
-        ylt = pd.DataFrame()
-        
-        # Map columns - these are the expected columns from RMS PLT
-        df_columns_lower = {col.lower(): col for col in df.columns}
-        
-        # Find the required columns
-        period_col = None
-        event_col = None
-        loss_col = None
-        eventdate_col = None
-        
-        # Common RMS column names
-        for pattern in ['periodid', 'period_id', 'period']:
-            if pattern in df_columns_lower:
-                period_col = df_columns_lower[pattern]
-                break
-        
-        for pattern in ['eventid', 'event_id', 'event']:
-            if pattern in df_columns_lower:
-                event_col = df_columns_lower[pattern]
-                break
-        
-        for pattern in ['loss', 'losses']:
-            if pattern in df_columns_lower:
-                loss_col = df_columns_lower[pattern]
-                break
-                
-        for pattern in ['eventdate', 'event_date']:
-            if pattern in df_columns_lower:
-                eventdate_col = df_columns_lower[pattern]
-                break
-        
-        if not all([period_col, event_col, loss_col]):
-            logger.error(f"Required columns not found. Available columns: {df.columns.tolist()}")
-            raise ValueError(f"Required columns (periodID, eventID, loss) not found in table")
-        
-        # Create YLT structure as per your SQL script
-        ylt['intYear'] = df[period_col]
-        ylt['Loss'] = df[loss_col]
-        ylt['LossType'] = 'CAT'
-        ylt['SD'] = 0
-        
-        # Calculate Day if EventDate exists (as per your SQL script)
-        if eventdate_col:
-            df[eventdate_col] = pd.to_datetime(df[eventdate_col])
-            year_start = df[eventdate_col].apply(lambda x: datetime(x.year, 1, 1))
-            ylt['Day'] = ((df[eventdate_col] - year_start).dt.days / 365.0).round(6)
-        else:
-            ylt['Day'] = 1
-        
-        ylt['eventid'] = df[event_col]
-        
-        # Convert to IFM format (matching your R script output)
-        ylt_ifm = pd.DataFrame()
-        ylt_ifm['intYear'] = ylt['intYear']
-        ylt_ifm['dblLoss'] = ylt['Loss']
-        ylt_ifm['CAT'] = ylt['LossType']
-        ylt_ifm['zero'] = ylt['SD']
-        ylt_ifm['rate'] = ylt['Day']
-        ylt_ifm['intEvent'] = ylt['eventid']
-        
-        # Add escape-delay header
-        header_row = pd.DataFrame({
-            'intYear': ['// escape-delay'],
-            'dblLoss': [''],
-            'CAT': [''],
-            'zero': [''],
-            'rate': [''],
-            'intEvent': ['']
-        })
-        
-        ylt_ifm = pd.concat([header_row, ylt_ifm], ignore_index=True)
-        
-        return ylt_ifm
+    """
+    Convert PLT from SQL to YLT IFM format from the rdm_port table.
+
+    This function robustly handles cases where the rdm_port table might exist
+    in either the 'plt' or 'dbo' schema by trying them in sequence.
+    """
+
+    schemas_to_try = ['plt', 'dbo']
+    df = None
+    successful_query = None
+
+    for schema in schemas_to_try:
+        try:
+            query = f"SELECT * FROM [{database}].[{schema}].[rdm_port]"
+            conditions = []
+            
+            if anlsid and str(anlsid).strip():
+                conditions.append(f"ANLSID = {anlsid}")
+            
+            if perspcode and perspcode.strip():
+                conditions.append(f"PERSPCODE = '{perspcode}'")
+            
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+            
+            logger.info(f"Attempting to execute query with schema '{schema}': {query}")
+            
+            chunks = []
+            for chunk in pd.read_sql_query(text(query), engine, chunksize=250000):
+                chunks.append(chunk)
+            
+            df = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
+            
+            successful_query = query
+            logger.info(f"Successfully executed query using schema '{schema}'.")
+            break 
+
+        except ProgrammingError as e:
+
+            if 'invalid object name' in str(e).lower():
+                logger.warning(f"Table not found in schema '{schema}'. Trying next schema...")
+                continue 
+            else:
+                logger.error(f"An unexpected SQL error occurred with schema '{schema}': {e}")
+                raise
+        except Exception as e:
+            logger.error(f"A non-SQL error occurred while querying schema '{schema}': {e}")
+            raise
+            
+    if df is None:
+        raise ValueError(f"Could not find the 'rdm_port' table in any of the attempted schemas: {schemas_to_try}")
+
     
-    except Exception as e:
-        logger.error(f"Error converting SQL PLT to YLT: {e}")
-        raise
+    if df.empty:
+        raise ValueError(f"Query returned no data. Check your parameters (ANLSID, PERSPCODE) and table contents. Query: {successful_query}")
+    
+    logger.info(f"Retrieved {len(df)} rows from database")
+    logger.info(f"Columns found: {df.columns.tolist()}")
+    
+    ylt = pd.DataFrame()
+    
+    # Map columns 
+    df_columns_lower = {col.lower(): col for col in df.columns}
+    
+    # Find required columns
+    period_col, event_col, loss_col, eventdate_col = None, None, None, None
+    
+    for pattern in ['periodid', 'period_id', 'period']:
+        if pattern in df_columns_lower:
+            period_col = df_columns_lower[pattern]
+            break
+    
+    for pattern in ['eventid', 'event_id', 'event']:
+        if pattern in df_columns_lower:
+            event_col = df_columns_lower[pattern]
+            break
+    
+    for pattern in ['loss', 'losses']:
+        if pattern in df_columns_lower:
+            loss_col = df_columns_lower[pattern]
+            break
+            
+    for pattern in ['eventdate', 'event_date']:
+        if pattern in df_columns_lower:
+            eventdate_col = df_columns_lower[pattern]
+            break
+    
+    if not all([period_col, event_col, loss_col]):
+        logger.error(f"Required columns not found. Available columns: {df.columns.tolist()}")
+        raise ValueError(f"Required columns (periodID, eventID, loss) not found in table")
+    
+    # Create YLT structure
+    ylt['intYear'] = df[period_col]
+    ylt['Loss'] = df[loss_col]
+    ylt['LossType'] = 'CAT'
+    ylt['SD'] = 0
+    
+    if eventdate_col:
+        df[eventdate_col] = pd.to_datetime(df[eventdate_col])
+        year_start = df[eventdate_col].apply(lambda x: datetime(x.year, 1, 1))
+        ylt['Day'] = ((df[eventdate_col] - year_start).dt.days / 365.0).round(6)
+    else:
+        ylt['Day'] = 1
+    
+    ylt['eventid'] = df[event_col]
+    
+    # Convert to IFM format
+    ylt_ifm = pd.DataFrame()
+    ylt_ifm['intYear'] = ylt['intYear']
+    ylt_ifm['dblLoss'] = ylt['Loss']
+    ylt_ifm['CAT'] = ylt['LossType']
+    ylt_ifm['zero'] = ylt['SD']
+    ylt_ifm['rate'] = ylt['Day']
+    ylt_ifm['intEvent'] = ylt['eventid']
+    
+    # Add escape-delay header
+    header_row = pd.DataFrame({
+        'intYear': ['// escape-delay'], 'dblLoss': [''], 'CAT': [''],
+        'zero': [''], 'rate': [''], 'intEvent': ['']
+    })
+    
+    ylt_ifm = pd.concat([header_row, ylt_ifm], ignore_index=True)
+    
+    return ylt_ifm
+
 
 @app.route('/')
 def index():
@@ -386,6 +409,90 @@ def get_databases():
             return Response('<option value="">Connection failed</option>', mimetype='text/html', status=503)
         else:
             return Response(f'<option value="">Error fetching databases</option>', mimetype='text/html', status=500)
+
+@app.route('/get_anlsids')
+def get_anlsids():
+    server = request.args.get('server')
+    database = request.args.get('database')
+    
+    if not server or not database:
+        return Response('<option value="">Select server and database</option>', mimetype='text/html')
+    
+    try:
+        creds = session.get('credentials', {})
+        engine = get_engine(server, database, creds.get('username'), creds.get('password'), creds.get('domain'))
+        
+        anlsids = None
+        schemas_to_try = ['dbo', 'plt']
+
+        with engine.connect() as conn:
+            for schema in schemas_to_try:
+                try:
+                    query = text(f"SELECT DISTINCT ANLSID FROM [{database}].[{schema}].[rdm_anlsevent] ORDER BY ANLSID")
+                    result = conn.execute(query)
+                    anlsids = [row[0] for row in result]
+                    logger.info(f"Found ANLSIDs in schema '{schema}'")
+                    break 
+                except ProgrammingError as e:
+                    if 'invalid object name' in str(e).lower():
+                        logger.warning(f"Table 'rdm_anlsevent' not found in schema '{schema}'. Trying next.")
+                        continue
+                    else:
+                        raise 
+        
+        if anlsids is None:
+            return Response('<option value="">No ANLSIDs found</option>', mimetype='text/html')
+
+        options = ['<option value="">-- All ANLSIDs (optional) --</option>']
+        options.extend([f'<option value="{a}">{a}</option>' for a in anlsids])
+        return Response('\n'.join(options), mimetype='text/html')
+
+    except Exception as e:
+        logger.error(f"Error fetching ANLSIDs: {e}")
+        return Response(f'<option value="">Error loading ANLSIDs</option>', status=500, mimetype='text/html')
+
+@app.route('/get_perspcodes')
+def get_perspcodes():
+    server = request.args.get('server')
+    database = request.args.get('database')
+    anlsid = request.args.get('anlsid')
+
+    if not all([server, database, anlsid]):
+        return Response('<option value="">-- All PERSPCODEs (optional) --</option>', mimetype='text/html')
+
+    try:
+        creds = session.get('credentials', {})
+        engine = get_engine(server, database, creds.get('username'), creds.get('password'), creds.get('domain'))
+        
+        perspcodes = None
+        schemas_to_try = ['dbo', 'plt']
+
+        with engine.connect() as conn:
+            for schema in schemas_to_try:
+                try:
+                    query = text(f"SELECT PERSPCODE FROM [{database}].[{schema}].[rdm_anlspersp] WHERE ANLSID = :anlsid ORDER BY PERSPCODE")
+                    result = conn.execute(query, {'anlsid': anlsid})
+                    perspcodes = [row[0] for row in result]
+                    logger.info(f"Found PERSPCODEs in schema '{schema}' for ANLSID {anlsid}")
+                    break
+                except ProgrammingError as e:
+                    if 'invalid object name' in str(e).lower():
+                        logger.warning(f"Table 'rdm_anlspersp' not found in schema '{schema}'. Trying next.")
+                        continue
+                    else:
+                        raise
+
+        if perspcodes is None:
+             return Response('<option value="">No PERSPCODEs found</option>', mimetype='text/html')
+
+        options = ['<option value="">-- All PERSPCODEs (optional) --</option>']
+        options.extend([f'<option value="{p}">{p}</option>' for p in perspcodes])
+        return Response('\n'.join(options), mimetype='text/html')
+
+    except Exception as e:
+        logger.error(f"Error fetching PERSPCODEs: {e}")
+        return Response(f'<option value="">Error loading PERSPCODEs</option>', status=500, mimetype='text/html')
+
 
 @app.route('/convert_csv', methods=['POST'])
 def convert_csv():
