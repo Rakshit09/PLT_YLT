@@ -273,6 +273,17 @@ def convert_sql_plt_to_ylt(engine, database, anlsid=None, perspcode=None):
     
     return ylt_ifm
 
+def get_credentials_for_server(server):
+    """Selects the correct credentials from the session based on the server name."""
+    if server == 'DATABRIDGE' and 'databridge_credentials' in session:
+        logger.info("Using DATABRIDGE specific credentials.")
+        creds = session.get('databridge_credentials', {})
+        return creds.get('username'), creds.get('password'), None
+    else:
+        logger.info("Using standard credentials.")
+        creds = session.get('credentials', {})
+        return creds.get('username'), creds.get('password'), creds.get('domain')
+
 
 @app.route('/')
 def index():
@@ -288,6 +299,11 @@ def login():
             'password': data.get('password'),
             'domain': data.get('domain')
         }
+        if data.get('use_databridge_creds'):
+            session['databridge_credentials'] = {
+                'username': data.get('databridge_username'),
+                'password': data.get('databridge_password')
+            }
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -315,10 +331,8 @@ def convert_sql():
         if not all([server, database]):
             return jsonify({'error': 'Server and Database are required'}), 400
         
-        # Use stored credentials
-        username = creds.get('username')
-        password = creds.get('password')
-        domain = creds.get('domain')
+        # Get credentials based on the selected server
+        username, password, domain = get_credentials_for_server(server)
         
         if not username or not password:
             return jsonify({'error': 'Missing credentials. Please login again.'}), 401
@@ -379,13 +393,13 @@ def get_databases():
         return Response('<option value="">Please select a server</option>', mimetype='text/html')
     
     try:
-        creds = session.get('credentials')
-        if not creds or not creds.get('username') or not creds.get('password'):
-            logger.error("No database credentials found in session")
+        username, password, domain = get_credentials_for_server(server)
+        if not username or not password:
+            logger.error("No database credentials found in session for the selected server type")
             return Response('<option value="">Authentication error: No credentials</option>', mimetype='text/html', status=401)
         
         # Connect to master db to get list of other DBs
-        engine = get_engine(server, 'master', creds.get('username'), creds.get('password'), creds.get('domain'))
+        engine = get_engine(server, 'master', username, password, domain)
         if engine is None:
             raise Exception("Failed to get database engine for server discovery.")
 
@@ -419,8 +433,11 @@ def get_anlsids():
         return Response('<option value="">Select server and database</option>', mimetype='text/html')
     
     try:
-        creds = session.get('credentials', {})
-        engine = get_engine(server, database, creds.get('username'), creds.get('password'), creds.get('domain'))
+        username, password, domain = get_credentials_for_server(server)
+        if not username or not password:
+             return Response('<option value="">Authentication error</option>', mimetype='text/html', status=401)
+
+        engine = get_engine(server, database, username, password, domain)
         
         anlsids = None
         schemas_to_try = ['dbo', 'plt']
@@ -461,8 +478,11 @@ def get_perspcodes():
         return Response('<option value="">-- All PERSPCODEs (optional) --</option>', mimetype='text/html')
 
     try:
-        creds = session.get('credentials', {})
-        engine = get_engine(server, database, creds.get('username'), creds.get('password'), creds.get('domain'))
+        username, password, domain = get_credentials_for_server(server)
+        if not username or not password:
+             return Response('<option value="">Authentication error</option>', mimetype='text/html', status=401)
+
+        engine = get_engine(server, database, username, password, domain)
         
         perspcodes = None
         schemas_to_try = ['dbo', 'plt']

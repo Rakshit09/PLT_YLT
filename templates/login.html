@@ -125,6 +125,9 @@
         <div id="errorMessage" class="error-message" style="display: none;"></div>
         
         <form id="loginForm">
+            <div class="login-header pt-2">
+                <p class="text-muted">Enter your standard Windows credentials</p>
+            </div>
             <div class="form-group">
                 <div class="d-flex justify-content-between align-items-center">
                     <label for="username" class="form-label mb-0">
@@ -167,6 +170,25 @@
                     Leave blank if domain is included in username
                 </small>
             </div>
+
+            <div class="form-check mb-3">
+                <input type="checkbox" class="form-check-input" id="useDatabridgeCreds">
+                <label class="form-check-label" for="useDatabridgeCreds">Use separate credentials for DATABRIDGE</label>
+            </div>
+
+            <div id="databridgeCreds" style="display: none;">
+                <div class="login-header pt-2">
+                    <p class="text-muted">Enter your DATABRIDGE credentials</p>
+                </div>
+                <div class="form-group">
+                    <label for="databridgeUsername" class="form-label">DATABRIDGE Username</label>
+                    <input type="text" class="form-control" id="databridgeUsername" name="databridgeUsername" placeholder="Enter DATABRIDGE username">
+                </div>
+                <div class="form-group">
+                    <label for="databridgePassword" class="form-label">DATABRIDGE Password</label>
+                    <input type="password" class="form-control" id="databridgePassword" name="databridgePassword" placeholder="Enter DATABRIDGE password">
+                </div>
+            </div>
         
             <div class="form-text text-muted mb-3">
                 <small>
@@ -200,6 +222,15 @@
                 passwordField.attr('type', this.checked ? 'text' : 'password');
             });
             
+            // Toggle DATABRIDGE credentials
+            $('#useDatabridgeCreds').on('change', function() {
+                if (this.checked) {
+                    $('#databridgeCreds').slideDown();
+                } else {
+                    $('#databridgeCreds').slideUp();
+                }
+            });
+
             // Form submission
             $('#loginForm').on('submit', function(e) {
                 e.preventDefault();
@@ -207,6 +238,10 @@
                 const username = $('#username').val().trim();
                 const password = $('#password').val();
                 const domain = $('#domain').val().trim();
+
+                const useDatabridge = $('#useDatabridgeCreds').is(':checked');
+                const databridgeUsername = $('#databridgeUsername').val().trim();
+                const databridgePassword = $('#databridgePassword').val();
                 
                 // Reset validation states
                 $('#username').removeClass('is-invalid');
@@ -236,7 +271,10 @@
                     data: JSON.stringify({
                         username: username,
                         password: password,
-                        domain: domain
+                        domain: domain,
+                        use_databridge_creds: useDatabridge,
+                        databridge_username: databridgeUsername,
+                        databridge_password: databridgePassword
                     }),
                     success: function(response) {
                         if (response.success) {
