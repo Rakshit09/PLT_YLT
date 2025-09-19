@@ -205,7 +205,7 @@
         </form>
     </div>
 
-    <!-- Bootstrap JS and dependencies -->
+    <!-- add Bootstrap JS -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
@@ -213,16 +213,16 @@
     
     <script>
         $(function () {
-            // Initialize tooltips
+            //  tooltips
             $('[data-toggle="tooltip"]').tooltip();
 
-            // Show/hide password toggle
+            // Show/hide password 
             $('#showPasswordToggle').on('change', function () {
                 const passwordField = $('#password');
                 passwordField.attr('type', this.checked ? 'text' : 'password');
             });
             
-            // Toggle DATABRIDGE credentials
+            //  DATABRIDGE creds
             $('#useDatabridgeCreds').on('change', function() {
                 if (this.checked) {
                     $('#databridgeCreds').slideDown();
@@ -243,12 +243,12 @@
                 const databridgeUsername = $('#databridgeUsername').val().trim();
                 const databridgePassword = $('#databridgePassword').val();
                 
-                // Reset validation states
+                //  validation states
                 $('#username').removeClass('is-invalid');
                 $('#usernameError').hide();
                 $('#errorMessage').hide();
                 
-                // Validate username format (must contain backslash or have separate domain)
+                // Validate username format 
                 const hasBackslash = username.includes('\\');
                 const hasDomain = domain.length > 0;
                 
@@ -258,7 +258,7 @@
                     return false;
                 }
                 
-                // Show loading state
+                //  loading 
                 $('#loginSpinner').show();
                 $('#loginText').text('Connecting...');
                 $('button[type="submit"]').prop('disabled', true);

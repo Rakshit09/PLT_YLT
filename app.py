@@ -24,13 +24,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def get_engine(server: str, database: str, username: str, password: str, domain: str = None):
-    """Create SQL Server connection engine"""
     try:
         if server == 'DATABRIDGE':
             server = DATABRIDGE
 
 
-        # Handle domain authentication
+        # domain authentication
         if domain and domain.strip():
             username = f"{domain}\\{username}"
 
@@ -69,7 +68,7 @@ def get_engine(server: str, database: str, username: str, password: str, domain:
             future=True,
         )
         
-        # Test connection
+        # test connection
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         
@@ -81,35 +80,34 @@ def get_engine(server: str, database: str, username: str, password: str, domain:
         raise
 
 def convert_csv_plt_to_ylt(df):
-    """Convert PLT DataFrame from CSV to YLT IFM format"""
     try:
-        # Ensure we have the required columns (case-insensitive search)
+    
         df_columns_lower = {col.lower(): col for col in df.columns}
         
         period_col = None
         event_col = None
         loss_col = None
         
-        # Find period column
+        #  period column
         for pattern in ['periodid', 'period_id', 'period']:
             if pattern in df_columns_lower:
                 period_col = df_columns_lower[pattern]
                 break
         
-        # Find event column
+        #  event column
         for pattern in ['eventid', 'event_id', 'event']:
             if pattern in df_columns_lower:
                 event_col = df_columns_lower[pattern]
                 break
         
-        # Find loss column
+        #  loss column
         for pattern in ['loss', 'losses', 'ground_up_loss']:
             if pattern in df_columns_lower:
                 loss_col = df_columns_lower[pattern]
                 break
         
         if not all([period_col, event_col, loss_col]):
-            # Try positional if named columns not found
+            # try positional 
             if len(df.columns) >= 3:
                 period_col = df.columns[0]
                 event_col = df.columns[1]
@@ -120,7 +118,7 @@ def convert_csv_plt_to_ylt(df):
         
         logger.info(f"Using columns - Period: {period_col}, Event: {event_col}, Loss: {loss_col}")
         
-        # Create YLT DataFrame in IFM format
+        # YLT DataFrame in IFM format
         ylt = pd.DataFrame()
         ylt['intYear'] = df[period_col]
         ylt['dblLoss'] = df[loss_col]
@@ -129,39 +127,37 @@ def convert_csv_plt_to_ylt(df):
         ylt['rate'] = 1
         ylt['intEvent'] = df[event_col]
         
-        # Add escape-delay header
-        header_row = pd.DataFrame({
-            'intYear': [''],
-            'dblLoss': [''],
-            'CAT': [''],
-            'zero': [''],
-            'rate': [''],
-            'intEvent': ['']
-        })
+
         
-        ylt = pd.concat([header_row, ylt], ignore_index=True)
+        #  to string, remove trailing comma
+        output = io.StringIO()
+        ylt.to_csv(output, index=False, header=False)
+        csv_string = output.getvalue()
+        lines = csv_string.splitlines()
+        if len(lines) > 0 and lines[0] == ",,,,,":
+            lines[0] = ""
         
-        return ylt
+        # clean string
+        return pd.read_csv(io.StringIO("\n".join(lines)), header=None, names=ylt.columns)
     
     except Exception as e:
         logger.error(f"Error converting CSV PLT to YLT: {e}")
         raise
 
 def convert_sql_plt_to_ylt(engine, database, anlsid=None, perspcode=None):
-    """
-    Convert PLT from SQL to YLT IFM format from the rdm_port table.
-
-    This function robustly handles cases where the rdm_port table might exist
-    in either the 'plt' or 'dbo' schema by trying them in sequence.
-    """
 
     schemas_to_try = ['plt', 'dbo']
     df = None
     successful_query = None
+    server = request.args.get('server')
 
     for schema in schemas_to_try:
         try:
-            query = f"SELECT * FROM [{database}].[{schema}].[rdm_port]"
+            if server == 'DATABRIDGE':
+                query = f"SELECT * FROM [{database}].[plt].[rdm_port]"
+            else:
+                query = f"SELECT * FROM [{database}].[{schema}].[rdm_port]"
+
             conditions = []
             
             if anlsid and str(anlsid).strip():
@@ -263,18 +259,9 @@ def convert_sql_plt_to_ylt(engine, database, anlsid=None, perspcode=None):
     ylt_ifm['rate'] = ylt['Day']
     ylt_ifm['intEvent'] = ylt['eventid']
     
-    # Add escape-delay header
-    header_row = pd.DataFrame({
-        'intYear': ['// escape-delay'], 'dblLoss': [''], 'CAT': [''],
-        'zero': [''], 'rate': [''], 'intEvent': ['']
-    })
-    
-    ylt_ifm = pd.concat([header_row, ylt_ifm], ignore_index=True)
-    
     return ylt_ifm
 
 def get_credentials_for_server(server):
-    """Selects the correct credentials from the session based on the server name."""
     if server == 'DATABRIDGE' and 'databridge_credentials' in session:
         logger.info("Using DATABRIDGE specific credentials.")
         creds = session.get('databridge_credentials', {})
@@ -291,7 +278,6 @@ def index():
 
 @app.route('/login', methods=['POST'])
 def login():
-    """Store credentials in session and redirect to dashboard"""
     try:
         data = request.json
         session['credentials'] = {
@@ -310,19 +296,17 @@ def login():
 
 @app.route('/dashboard')
 def dashboard():
-    """Main dashboard with SQL and CSV tabs"""
     if 'credentials' not in session:
         return redirect(url_for('index'))
     return render_template('dashboard.html', edm_servers=EDM_SERVERS)
 
 @app.route('/convert_sql', methods=['POST'])
 def convert_sql():
-    """Convert PLT from SQL Server to YLT"""
     try:
         data = request.json
         creds = session.get('credentials', {})
         
-        # Get connection parameters
+        #  connection parameters
         server = data.get('server')
         database = data.get('database')
         anlsid = data.get('anlsid')
@@ -331,37 +315,60 @@ def convert_sql():
         if not all([server, database]):
             return jsonify({'error': 'Server and Database are required'}), 400
         
-        # Get credentials based on the selected server
+        #  credentials
         username, password, domain = get_credentials_for_server(server)
         
         if not username or not password:
             return jsonify({'error': 'Missing credentials. Please login again.'}), 401
         
-        # Create engine and convert
+        #  engine 
         engine = get_engine(server, database, username, password, domain)
         ylt_df = convert_sql_plt_to_ylt(engine, database, anlsid, perspcode)
         
-        # **IMPROVEMENT**: Calculate AAL dynamically instead of using a hardcoded value
-        numeric_rows = ylt_df[ylt_df['intYear'] != '// escape-delay'].copy()
+        # calculate AAL dynamically 
+        numeric_rows = ylt_df[pd.to_numeric(ylt_df['intYear'], errors='coerce').notna()].copy()
+        
+        #  metadata header
+        name = 'N/A'
+        curr = 'N/A'
+        if anlsid:
+            anlsids_dict = session.get('anlsids', {})
+            anlsid_info = anlsids_dict.get(str(anlsid))
+            if anlsid_info:
+                name = anlsid_info.get('name', 'N/A')
+                curr = anlsid_info.get('curr', 'N/A')
+
+        metadata_lines = [
+            f"// Server: {server}",
+            f"// Database: {database}",
+            f"// Analysis ID: {anlsid or 'All'}",
+            f"// Name: {name if anlsid else 'All'}",
+            f"// Currency: {curr if anlsid else 'All'}"
+        ]
+        
         if len(numeric_rows) > 0:
-            # Ensure columns are numeric for calculations
+            #  columns are numeric 
             numeric_rows['dblLoss'] = pd.to_numeric(numeric_rows['dblLoss'], errors='coerce')
             numeric_rows['intYear'] = pd.to_numeric(numeric_rows['intYear'], errors='coerce')
             
             total_loss = numeric_rows['dblLoss'].sum()
             
-            # Calculate AAL based on the number of simulation years (max period)
+            # calculate AAL based on the number of simulation years (max period)
             num_years = numeric_rows['intYear'].max()
             aal = total_loss / num_years if num_years > 0 else 0
         else:
             aal = 0
         
-        # Convert to CSV string
+        #  to CSV string
         output = io.StringIO()
         ylt_df.to_csv(output, index=False, header=False)
-        csv_content = output.getvalue()
+        data_csv_content = output.getvalue()
+
+        #  prepend metadata 
+        metadata_header = "\n".join(metadata_lines) + "\n"
+        csv_content = metadata_header + data_csv_content
         
-        # Generate filename
+        #  filename
         filename_parts = ['YLT']
         if anlsid:
             filename_parts.append(f'ANLSID{anlsid}')
@@ -376,7 +383,7 @@ def convert_sql():
             'data': csv_content,
             'rows': len(numeric_rows),
             'aal': aal,
-            'query_info': f"Database: {database}, ANLSID: {anlsid or 'All'}, PERSPCODE: {perspcode or 'All'}"
+            'query_info': f"Database: {database}, ANLSID: {anlsid or 'All'}, Name: {name if anlsid else 'All'}, Currency: {curr if anlsid else 'All'}, PERSPCODE: {perspcode or 'All'}"
         })
         
     except Exception as e:
@@ -398,7 +405,7 @@ def get_databases():
             logger.error("No database credentials found in session for the selected server type")
             return Response('<option value="">Authentication error: No credentials</option>', mimetype='text/html', status=401)
         
-        # Connect to master db to get list of other DBs
+        # Connect and get DBs
         engine = get_engine(server, 'master', username, password, domain)
         if engine is None:
             raise Exception("Failed to get database engine for server discovery.")
@@ -440,31 +447,28 @@ def get_anlsids():
         engine = get_engine(server, database, username, password, domain)
         
         anlsids = None
-        schemas_to_try = ['dbo', 'plt']
 
         with engine.connect() as conn:
-            for schema in schemas_to_try:
-                try:
-                    if server == 'DATABRIDGE':
-                        query = text(f"SELECT DISTINCT ANLSID FROM [{database}].[plt].[rdm_anlsregions]  ORDER BY ANLSID") # or should be rdm_port instead?
-                    else:
-                        query = text(f"SELECT DISTINCT ANLSID FROM [{database}].[{schema}].[rdm_anlsevent] ORDER BY ANLSID")
-                    result = conn.execute(query)
-                    anlsids = [row[0] for row in result]
-                    logger.info(f"Found ANLSIDs in schema '{schema}'")
-                    break 
-                except ProgrammingError as e:
-                    if 'invalid object name' in str(e).lower():
-                        logger.warning(f"Table 'rdm_anlsevent' not found in schema '{schema}'. Trying next.")
-                        continue
-                    else:
-                        raise 
+            try:
+                query = text(f"SELECT DISTINCT ID, NAME, CURR, PERIL FROM [{database}].[dbo].[rdm_analysis] ORDER BY ID")
+                result = conn.execute(query)
+                anlsids = [(row[0], row[1], row[2], row[3]) for row in result]
+                logger.info("Found ANLSIDs with full details from 'dbo.rdm_analysis'")
+            except Exception as e:
+                logger.warning(f"Could not get full details from 'rdm_analysis': {e}. Falling back to ANLSID from rdm_port.")
+                
         
-        if anlsids is None:
+        if anlsids is None or not anlsids:
             return Response('<option value="">No ANLSIDs found</option>', mimetype='text/html')
 
         options = ['<option value="">-- All ANLSIDs (optional) --</option>']
-        options.extend([f'<option value="{a}">{a}</option>' for a in anlsids])
+        
+        # Store in session 
+        anlsids_dict = {str(id): {'name': name, 'curr': curr, 'peril': peril} for id, name, curr, peril in anlsids}
+        session['anlsids'] = anlsids_dict
+
+        options.extend([f'<option value="{id}">{id}    [{name}]</option>' for id, name, curr, peril in anlsids])
+
         return Response('\n'.join(options), mimetype='text/html')
 
     except Exception as e:
@@ -522,7 +526,6 @@ def get_perspcodes():
 
 @app.route('/convert_csv', methods=['POST'])
 def convert_csv():
-    """Convert uploaded CSV PLT file to YLT"""
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file uploaded'}), 400
@@ -536,16 +539,17 @@ def convert_csv():
         
         logger.info(f"Processing file: {file.filename}")
         
-        # Read CSV file
+        #  read CSV file
         df = pd.read_csv(file)
         logger.info(f"CSV loaded with shape: {df.shape}, columns: {df.columns.tolist()}")
         
         # Convert to YLT
         ylt_df = convert_csv_plt_to_ylt(df)
         
-        # Calculate AAL
-        numeric_rows = ylt_df[ylt_df['intYear'] != '// escape-delay'].copy()
+        # calculate AAL
+        numeric_rows = ylt_df[pd.to_numeric(ylt_df.iloc[:, 0], errors='coerce').notna()].copy()
         if len(numeric_rows) > 0:
+            numeric_rows.columns = ['intYear', 'dblLoss', 'CAT', 'zero', 'rate', 'intEvent']
             numeric_rows['dblLoss'] = pd.to_numeric(numeric_rows['dblLoss'], errors='coerce')
             numeric_rows['intYear'] = pd.to_numeric(numeric_rows['intYear'], errors='coerce')
             max_year = numeric_rows['intYear'].max()
@@ -554,12 +558,12 @@ def convert_csv():
         else:
             aal = 0
         
-        # Convert to CSV string
+        #  to CSV string
         output = io.StringIO()
         ylt_df.to_csv(output, index=False, header=False)
         csv_content = output.getvalue()
         
-        # Generate filename
+        # filename
         output_filename = file.filename.replace('PLT', 'YLT').replace('.csv', '_IFM.csv')
         if 'YLT' not in output_filename:
             output_filename = output_filename.replace('.csv', '_YLT_IFM.csv')

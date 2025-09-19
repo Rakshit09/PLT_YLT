@@ -244,8 +244,18 @@
                 let optionsFound = false;
                 anlsidSelect.find('option').each(function() {
                     const option = $(this);
-                    if (option.val() && String(option.text()).toLowerCase().includes(searchTerm)) {
-                        anlsidOptions.append(`<a class="dropdown-item" href="#" data-value="${option.val()}">${option.text()}</a>`);
+                    const optionText = String(option.text());
+                    if (option.val() && optionText.toLowerCase().includes(searchTerm)) {
+                        let displayHtml = optionText;
+                        const bracketIndex = optionText.indexOf('[');
+
+                        if (bracketIndex > 0) {
+                            const anlsid = optionText.substring(0, bracketIndex).trim();
+                            const name = optionText.substring(bracketIndex).trim();
+                            displayHtml = `<strong>${anlsid}</strong> <small class="text-muted ms-2">${name}</small>`;
+                        }
+                        
+                        anlsidOptions.append(`<a class="dropdown-item" href="#" data-value="${option.val()}">${displayHtml}</a>`);
                         optionsFound = true;
                     }
                 });
@@ -307,10 +317,10 @@
                 const value = $(this).data('value');
                 const text = $(this).text();
                 
-                dbSelect.val(value).trigger('change'); // Set value and trigger change
+                dbSelect.val(value).trigger('change'); //trigger change
                 dbButton.text(text);
                 
-                // Manually hide dropdown
+                //  hide dropdown
                 var dropdown = bootstrap.Dropdown.getInstance(dbButton[0]);
                 if (dropdown) {
                     dropdown.hide();
@@ -357,10 +367,10 @@
             anlsidOptions.on('click', '.dropdown-item', function(e) {
                 e.preventDefault();
                 const value = $(this).data('value');
-                const text = $(this).text();
+                const htmlContent = $(this).html();
                 
                 anlsidSelect.val(value).trigger('change');
-                anlsidButton.text(text);
+                anlsidButton.html(htmlContent);
                 
                 var dropdown = bootstrap.Dropdown.getInstance(anlsidButton[0]);
                 if (dropdown) {
@@ -421,7 +431,7 @@
             });
         });
 
-        // SQL Form Submission
+        // SQL Form 
         $('#sqlForm').on('submit', function(e) {
             e.preventDefault();
             
@@ -452,7 +462,7 @@
             });
         });
         
-        // CSV Form Submission
+        // CSV Form 
         $('#csvForm').on('submit', function(e) {
             e.preventDefault();
             
@@ -486,7 +496,7 @@
             });
         });
         
-        // Display Results
+        //  Results
         function displayResults(result) {
             currentResultData = result;
             
@@ -533,14 +543,14 @@
             $('#resultsSection').show();
         }
 
-        // Download File Function
+        // Download File
         function downloadFile() {
             if (!currentResultData) {
                 alert('No file to download');
                 return;
             }
             
-            // Create blob and download
+            // Create blob + download
             const blob = new Blob([currentResultData.data], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
