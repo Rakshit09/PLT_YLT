@@ -35,13 +35,13 @@
                     <li class="nav-item" role="presentation">
                         <button class="nav-link active" id="sql-tab" data-bs-toggle="tab" 
                                 data-bs-target="#sql" type="button">
-                            <i class="fas fa-database"></i> SQL Conversion
+                            <i class="fas fa-database"></i> Convert from SQL Server
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="csv-tab" data-bs-toggle="tab" 
                                 data-bs-target="#csv" type="button">
-                            <i class="fas fa-file-csv"></i> CSV Conversion
+                            <i class="fas fa-file-csv"></i> Convert from CSV File
                         </button>
                     </li>
                 </ul>
@@ -94,8 +94,8 @@
                                     <div class="row">
                                         <div class="col-md-6">
                                             <div class="mb-3">
-                                                <label for="anlsid" class="form-label">
-                                                    ANLSID <small class="text-muted">(optional)</small>
+                                                <label for="anlsid" class="form-label" required>
+                                                    ANLSID <span class="text-danger">*</span>
                                                 </label>
                                                 <div class="dropdown searchable-select-container" id="anlsid-container">
                                                     <button class="form-control btn dropdown-toggle text-start" type="button" data-bs-toggle="dropdown" aria-expanded="false" disabled>
@@ -113,8 +113,8 @@
                                         </div>
                                         <div class="col-md-6">
                                             <div class="mb-3">
-                                                <label for="perspcode" class="form-label">
-                                                    PERSPCODE <small class="text-muted">(optional)</small>
+                                                <label for="perspcode" class="form-label" required>
+                                                    PERSPCODE <span class="text-danger">*</span>
                                                 </label>
                                                 <div class="dropdown searchable-select-container" id="perspcode-container">
                                                     <button class="form-control btn dropdown-toggle text-start" type="button" data-bs-toggle="dropdown" aria-expanded="false" disabled>
@@ -137,10 +137,40 @@
                                         Query: SELECT * FROM [db].[schema].[rdm_port] WHERE ANLSID=X AND PERSPCODE='Y'
                                     </div>
 
+                                    <button type="button" id="addToBatchBtn" class="btn btn-primary">
+                                        <i class="fas fa-plus"></i> Add to Batch
+                                    </button>
                                     <button type="submit" class="btn btn-primary">
-                                        <i class="fas fa-sync-alt"></i> Convert to YLT (IFM Format)
+                                        <i class="fas fa-sync-alt"></i> Convert Single to YLT
                                     </button>
                                 </form>
+
+                                <!-- Batch Queue Section -->
+                                <div class="mt-4" id="batchQueueSection" style="display: none;">
+                                    <hr>
+                                    <h5><i class="fas fa-list-ol"></i> Batch Queue</h5>
+                                    <div class="table-responsive">
+                                        <table class="table table-striped table-sm">
+                                            <thead>
+                                                <tr>
+                                                    <th>Server</th>
+                                                    <th>Database</th>
+                                                    <th>ANLSID</th>
+                                                    <th>Currency</th>
+                                                    <th>Peril</th>
+                                                    <th>PERSPCODE</th>
+                                                    <th>Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="batchQueueBody">
+                                                <!-- Batch items will be added here -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button id="processBatchBtn" class="btn btn-success mt-2">
+                                        <i class="fas fa-file-archive"></i> Process Batch & Download Zip
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -255,7 +285,7 @@
                             displayHtml = `<strong>${anlsid}</strong> <small class="text-muted ms-2">${name}</small>`;
                         }
                         
-                        anlsidOptions.append(`<a class="dropdown-item" href="#" data-value="${option.val()}">${displayHtml}</a>`);
+                        anlsidOptions.append(`<a class="dropdown-item" href="#" data-value="${option.val()}" data-curr="${option.data('curr') || 'N/A'}" data-peril="${option.data('peril') || 'N/A'}">${displayHtml}</a>`);
                         optionsFound = true;
                     }
                 });
@@ -429,6 +459,129 @@
                     dropdown.hide();
                 }
             });
+
+            let batchQueue = []; // Use an array to track jobs and prevent duplicates
+            let currentBatchZipData = null;
+
+            // Add to Batch button
+            $('#addToBatchBtn').on('click', function() {
+                const server = $('#sqlServer').val();
+                const serverText = $('#sqlServer option:selected').text();
+                const database = $('#sqlDatabase').val();
+                const databaseText = $('#database-container .dropdown-toggle').text();
+                const anlsidSelect = $('#anlsid');
+                const anlsid = anlsidSelect.val();
+                const anlsidText = $('#anlsid-container .dropdown-toggle').html();
+                const selectedAnlsidOption = anlsidSelect.find('option:selected');
+                const curr = selectedAnlsidOption.data('curr') || 'N/A';
+                const peril = selectedAnlsidOption.data('peril') || 'N/A';
+                const perspcode = $('#perspcode').val();
+                const perspcodeText = $('#perspcode-container .dropdown-toggle').text();
+
+                if (!server || !database) {
+                    alert('Please select a Server and Database to add to the batch.');
+                    return;
+                }
+
+                const job = {
+                    server: server,
+                    database: database,
+                    anlsid: anlsid || null, // Send null for "All"
+                    perspcode: perspcode || null, // Send null for "All"
+                };
+
+                // Check for duplicates
+                const isDuplicate = batchQueue.some(item => 
+                    item.server === job.server &&
+                    item.database === job.database &&
+                    item.anlsid === job.anlsid &&
+                    item.perspcode === job.perspcode
+                );
+
+                if (isDuplicate) {
+                    alert('This combination is already in the batch queue.');
+                    return;
+                }
+
+                batchQueue.push(job);
+
+                const perspcodeDisplay = perspcode ? perspcodeText : '-- All --';
+                const anlsidDisplay = anlsid ? anlsidText : '-- All --';
+
+                const newRow = `
+                    <tr data-job='${JSON.stringify(job)}'>
+                        <td>${serverText}</td>
+                        <td>${databaseText}</td>
+                        <td>${anlsidDisplay}</td>
+                        <td>${curr}</td>
+                        <td>${peril}</td>
+                        <td>${perspcodeDisplay}</td>
+                        <td>
+                            <button class="btn btn-danger btn-sm remove-batch-item">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+                
+                $('#batchQueueBody').append(newRow);
+                $('#batchQueueSection').show();
+            });
+
+            // Remove item from batch
+            $('#batchQueueBody').on('click', '.remove-batch-item', function() {
+                const row = $(this).closest('tr');
+                const jobToRemove = row.data('job');
+                
+                // Remove from array
+                batchQueue = batchQueue.filter(item => 
+                    !(item.server === jobToRemove.server &&
+                    item.database === jobToRemove.database &&
+                    item.anlsid === jobToRemove.anlsid &&
+                    item.perspcode === jobToRemove.perspcode)
+                );
+                
+                row.remove();
+
+                if (batchQueue.length === 0) {
+                    $('#batchQueueSection').hide();
+                }
+            });
+
+            // Process Batch button
+            $('#processBatchBtn').on('click', function() {
+                if (batchQueue.length === 0) {
+                    alert('Batch queue is empty. Please add items to process.');
+                    return;
+                }
+
+                $('#loadingSpinner').show();
+                $('#resultsSection').hide();
+
+                $.ajax({
+                    url: '/convert_batch',
+                    type: 'POST',
+                    data: JSON.stringify({ jobs: batchQueue }),
+                    contentType: 'application/json',
+                    success: function(response) {
+                        $('#loadingSpinner').hide();
+                        
+                        displayBatchResults(response);
+
+                        // Clear the batch queue after successful processing
+                        batchQueue = [];
+                        $('#batchQueueBody').empty();
+                        $('#batchQueueSection').hide();
+
+                        alert('Batch processing complete. See results below.');
+                    },
+                    error: function(xhr) {
+                        $('#loadingSpinner').hide();
+                        const error = xhr.responseJSON ? xhr.responseJSON.error : 'An error occurred during batch processing.';
+                        alert('Error: ' + error);
+                    }
+                });
+            });
         });
 
         // SQL Form 
@@ -541,6 +694,91 @@
             
             $('#resultsContent').html(html);
             $('#resultsSection').show();
+        }
+
+        function displayBatchResults(result) {
+            currentBatchZipData = result.zip_data;
+            
+            let summariesHtml = result.summaries.map(summary => {
+                if (summary.error) {
+                    return `
+                        <div class="result-stats mb-3">
+                            <div class="stat-item">
+                                <span class="stat-label">File:</span>
+                                <span class="stat-value text-danger">${summary.filename}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Status:</span>
+                                <span class="stat-value text-danger">Failed</span>
+                            </div>
+                            <small class="text-muted d-block mt-2">Error: ${summary.error}</small>
+                        </div>`;
+                } else {
+                    return `
+                        <div class="result-stats mb-3">
+                            <div class="stat-item">
+                                <span class="stat-label">Output File:</span>
+                                <span class="stat-value">${summary.filename}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Total Rows:</span>
+                                <span class="stat-value">${summary.rows.toLocaleString()}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">AAL:</span>
+                                <span class="stat-value">${summary.aal.toFixed(2)}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Query Info:</span>
+                                <small class="text-muted d-block">${summary.query_info}</small>
+                            </div>
+                        </div>`;
+                }
+            }).join('');
+
+            const html = `
+                ${summariesHtml}
+                <div class="download-section">
+                    <h5 class="mb-3">Your batch conversion is complete!</h5>
+                    <button class="btn btn-success download-btn" onclick="downloadBatchZip()">
+                        <i class="fas fa-download"></i> Download All as ZIP
+                    </button>
+                </div>
+            `;
+            
+            $('#resultsContent').html(html);
+            $('#resultsSection').show();
+        }
+
+        function downloadBatchZip() {
+            if (!currentBatchZipData) {
+                alert('No batch data to download.');
+                return;
+            }
+
+            try {
+                const byteCharacters = atob(currentBatchZipData);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], {type: 'application/zip'});
+                
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', 'YLT_Batch_Conversion.zip');
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+
+            } catch (e) {
+                console.error("Failed to decode or download zip file:", e);
+                alert("An error occurred while preparing the zip file for download.");
+            }
         }
 
         // Download File

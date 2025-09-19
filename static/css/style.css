@@ -178,6 +178,14 @@ main.content-wrapper {
     box-shadow: 0 2px 4px rgba(0,0,0,0.12);
 }
 
+.btn-primary:active,
+.btn-primary:focus,
+.btn-primary.active {
+    background-color: #0ac980 !important;
+    border-color: #0ac980 !important;
+    box-shadow: 0 0 0 3px rgba(10, 201, 128, 0.25) !important;
+}
+
 .btn-success {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
@@ -191,6 +199,14 @@ main.content-wrapper {
     border-color: var(--primary-dark);
     transform: translateY(-1px);
     box-shadow: 0 2px 4px rgba(0,0,0,0.12);
+}
+
+.btn-success:active,
+.btn-success:focus,
+.btn-success.active {
+    background-color: #0ac980 !important;
+    border-color: #0ac980 !important;
+    box-shadow: 0 0 0 3px rgba(10, 201, 128, 0.25) !important;
 }
 
 .form-label {
@@ -235,6 +251,10 @@ main.content-wrapper {
     border-radius: 8px;
     padding: var(--spc-4);
     margin-bottom: var(--spc-4);
+    border: 1px solid var(--border-color);
+}
+
+.result-stats.mb-3 {
     border: 1px solid var(--border-color);
 }
 
@@ -402,7 +422,7 @@ input[type="file"]:hover {
 :root {
     /* Colors */
     --primary-color: #42A5F5;
-    --primary-dark: #1E88E5;
+    --primary-dark: #0ac979;
     --primary-light: #BBDEFB;
     --primary-lighter: #BBDEFB;
     --text-color: #4a5568;
@@ -478,4 +498,38 @@ input[type="file"]:focus{
     background:var(--primary-dark); border-color:var(--primary-dark);
     box-shadow:0 3px 6px rgb(0 0 0 /.12);
     transform:translateY(-1px);
+}
+
+.btn-primary:active,
+.btn-primary:focus,
+.btn-primary.active,
+.btn-success:active,
+.btn-success:focus,
+.btn-success.active {
+    background-color: #0ac980 !important;
+    border-color: #0ac980 !important;
+    box-shadow: 0 0 0 3px rgba(10, 201, 128, 0.25) !important;
+}
+
+#batchQueueSection .table-responsive {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+#batchQueueSection table thead {
+    background-color: var(--primary-light);
+    color: var(--text-color-dark);
+}
+
+#batchQueueSection table th {
+    font-weight: 600;
+    border-bottom: none;
+    padding: var(--spc-3);
+}
+
+#batchQueueSection table td {
+    vertical-align: middle;
+    padding: var(--spc-3);
+    background-color: var(--bg-color-light)
+
 }

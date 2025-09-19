@@ -1,6 +1,7 @@
 import os
 import io
 import logging
+import zipfile
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for, Response
 import pandas as pd
@@ -9,6 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy import create_engine, text, URL
 from dotenv import load_dotenv
 from sqlalchemy.exc import ProgrammingError
+import base64
 load_dotenv()
 
 app = Flask(__name__)
@@ -144,13 +146,12 @@ def convert_csv_plt_to_ylt(df):
         logger.error(f"Error converting CSV PLT to YLT: {e}")
         raise
 
-def convert_sql_plt_to_ylt(engine, database, anlsid=None, perspcode=None):
+def convert_sql_plt_to_ylt(engine, database, server, anlsid=None, perspcode=None):
 
     schemas_to_try = ['plt', 'dbo']
     df = None
     successful_query = None
-    server = request.args.get('server')
-
+    
     for schema in schemas_to_try:
         try:
             if server == 'DATABRIDGE':
@@ -323,7 +324,7 @@ def convert_sql():
         
         #  engine 
         engine = get_engine(server, database, username, password, domain)
-        ylt_df = convert_sql_plt_to_ylt(engine, database, anlsid, perspcode)
+        ylt_df = convert_sql_plt_to_ylt(engine, database, server, anlsid, perspcode)
         
         # calculate AAL dynamically 
         numeric_rows = ylt_df[pd.to_numeric(ylt_df['intYear'], errors='coerce').notna()].copy()
@@ -388,6 +389,119 @@ def convert_sql():
         
     except Exception as e:
         logger.error(f"SQL conversion error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/convert_batch', methods=['POST'])
+def convert_batch():
+    try:
+        jobs = request.json.get('jobs', [])
+        if not jobs:
+            return jsonify({'error': 'No batch jobs provided'}), 400
+
+        zip_buffer = io.BytesIO()
+        summaries = []
+
+        with zipfile.ZipFile(zip_buffer, 'a', zipfile.ZIP_DEFLATED) as zip_file:
+            for job in jobs:
+                server = job.get('server')
+                database = job.get('database')
+                anlsid = job.get('anlsid')
+                perspcode = job.get('perspcode')
+
+                if not all([server, database]):
+                    logger.warning(f"Skipping invalid batch job: {job}")
+                    continue
+
+                output_filename = "error.txt"
+                try:
+                    # Get credentials and engine
+                    username, password, domain = get_credentials_for_server(server)
+                    if not username or not password:
+                        raise Exception(f"Missing credentials for server {server}")
+                    
+                    engine = get_engine(server, database, username, password, domain)
+
+                    # Convert to YLT
+                    ylt_df = convert_sql_plt_to_ylt(engine, database, server, anlsid, perspcode)
+
+                    # Calculate stats
+                    numeric_rows = ylt_df[pd.to_numeric(ylt_df['intYear'], errors='coerce').notna()].copy()
+                    aal = 0
+                    if len(numeric_rows) > 0:
+                        numeric_rows['dblLoss'] = pd.to_numeric(numeric_rows['dblLoss'], errors='coerce')
+                        numeric_rows['intYear'] = pd.to_numeric(numeric_rows['intYear'], errors='coerce')
+                        total_loss = numeric_rows['dblLoss'].sum()
+                        num_years = numeric_rows['intYear'].max()
+                        aal = total_loss / num_years if num_years > 0 else 0
+
+                    # Add metadata
+                    name = 'N/A'
+                    curr = 'N/A'
+                    if anlsid:
+                        anlsids_dict = session.get('anlsids', {})
+                        anlsid_info = anlsids_dict.get(str(anlsid))
+                        if anlsid_info:
+                            name = anlsid_info.get('name', 'N/A')
+                            curr = anlsid_info.get('curr', 'N/A')
+                    
+                    metadata_lines = [
+                        f"\\\\ Server: {server}",
+                        f"\\\\ Database: {database}",
+                        f"\\\\ Analysis ID: {anlsid or 'All'}",
+                        f"\\\\ Name: {name if anlsid else 'All'}",
+                        f"\\\\ Currency: {curr if anlsid else 'All'}"
+                    ]
+
+                    # Generate CSV content
+                    output = io.StringIO()
+                    ylt_df.to_csv(output, index=False, header=False)
+                    data_csv_content = output.getvalue()
+                    
+                    metadata_header = "\n".join(metadata_lines) + "\n"
+                    csv_content = metadata_header + data_csv_content
+
+                    # Generate filename
+                    filename_parts = ['YLT']
+                    if anlsid:
+                        filename_parts.append(f'ANLSID{anlsid}')
+                    if perspcode:
+                        filename_parts.append(perspcode)
+                    filename_parts.append(f'{database}_IFM.csv')
+                    output_filename = '_'.join(filter(None, filename_parts))
+
+                    # Add file to zip
+                    zip_file.writestr(output_filename, csv_content)
+                    logger.info(f"Added {output_filename} to batch zip.")
+
+                    # Append summary
+                    summaries.append({
+                        'filename': output_filename,
+                        'rows': len(numeric_rows),
+                        'aal': aal,
+                        'query_info': f"DB: {database}, ANLSID: {anlsid or 'All'}, PERSPCODE: {perspcode or 'All'}"
+                    })
+
+                except Exception as e:
+                    logger.error(f"Failed to process batch job {job}: {e}", exc_info=True)
+                    error_filename = f"ERROR_ANLSID{anlsid or 'All'}_{database}.txt"
+                    error_content = f"Failed to process job for:\nServer: {server}\nDatabase: {database}\nANLSID: {anlsid or 'All'}\nPERSPCODE: {perspcode or 'All'}\n\nError: {str(e)}"
+                    zip_file.writestr(error_filename, error_content)
+                    summaries.append({
+                        'filename': error_filename,
+                        'error': str(e)
+                    })
+        
+        zip_buffer.seek(0)
+        zip_base64 = base64.b64encode(zip_buffer.getvalue()).decode('utf-8')
+
+        return jsonify({
+            'success': True,
+            'summaries': summaries,
+            'zip_data': zip_base64
+        })
+
+    except Exception as e:
+        logger.error(f"Batch conversion error: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/get_databases')
@@ -467,7 +581,7 @@ def get_anlsids():
         anlsids_dict = {str(id): {'name': name, 'curr': curr, 'peril': peril} for id, name, curr, peril in anlsids}
         session['anlsids'] = anlsids_dict
 
-        options.extend([f'<option value="{id}">{id}    [{name}]</option>' for id, name, curr, peril in anlsids])
+        options.extend([f'<option value="{id}" data-curr="{curr}" data-peril="{peril}">{id}    [{name}]</option>' for id, name, curr, peril in anlsids])
 
         return Response('\n'.join(options), mimetype='text/html')
 
