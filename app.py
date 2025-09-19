@@ -414,17 +414,17 @@ def convert_batch():
 
                 output_filename = "error.txt"
                 try:
-                    # Get credentials and engine
+                    #  credentials and engine
                     username, password, domain = get_credentials_for_server(server)
                     if not username or not password:
                         raise Exception(f"Missing credentials for server {server}")
                     
                     engine = get_engine(server, database, username, password, domain)
 
-                    # Convert to YLT
+                    # convert to YLT
                     ylt_df = convert_sql_plt_to_ylt(engine, database, server, anlsid, perspcode)
 
-                    # Calculate stats
+                    # calculate stats
                     numeric_rows = ylt_df[pd.to_numeric(ylt_df['intYear'], errors='coerce').notna()].copy()
                     aal = 0
                     if len(numeric_rows) > 0:
@@ -434,7 +434,7 @@ def convert_batch():
                         num_years = numeric_rows['intYear'].max()
                         aal = total_loss / num_years if num_years > 0 else 0
 
-                    # Add metadata
+                    # add metadata
                     name = 'N/A'
                     curr = 'N/A'
                     if anlsid:
@@ -452,7 +452,7 @@ def convert_batch():
                         f"\\\\ Currency: {curr if anlsid else 'All'}"
                     ]
 
-                    # Generate CSV content
+                    #  CSV content
                     output = io.StringIO()
                     ylt_df.to_csv(output, index=False, header=False)
                     data_csv_content = output.getvalue()
@@ -460,7 +460,7 @@ def convert_batch():
                     metadata_header = "\n".join(metadata_lines) + "\n"
                     csv_content = metadata_header + data_csv_content
 
-                    # Generate filename
+                    #  filename
                     filename_parts = ['YLT']
                     if anlsid:
                         filename_parts.append(f'ANLSID{anlsid}')
@@ -469,11 +469,11 @@ def convert_batch():
                     filename_parts.append(f'{database}_IFM.csv')
                     output_filename = '_'.join(filter(None, filename_parts))
 
-                    # Add file to zip
+                    # add file to zip
                     zip_file.writestr(output_filename, csv_content)
                     logger.info(f"Added {output_filename} to batch zip.")
 
-                    # Append summary
+                    # add  summary
                     summaries.append({
                         'filename': output_filename,
                         'rows': len(numeric_rows),
