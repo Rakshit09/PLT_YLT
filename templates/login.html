@@ -113,13 +113,40 @@
             cursor: help;
             margin-left: 5px;
         }
+        .password-toggle {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: #6c757d;
+            z-index: 10;
+        }
+        .password-toggle:hover {
+            color: #64B5F6;
+        }
+        .password-field-wrapper {
+            position: relative;
+        }
+        .form-control.has-icon {
+            padding-right: 45px;
+        }
+        .databridge-checkbox {
+            transform: scale(1.2);
+            margin-right: 8px;
+        }
+        .databridge-label {
+            font-weight: bold;
+            font-size: 16px;
+            color: #333;
+        }
     </style>
 </head>
 <body>
     <div class="login-container">
         <div class="login-header">
             <h2><i class="fas fa-exchange-alt"></i> PLT to YLT Converter</h2>
-            <p class="text-muted">Enter your database credentials</p>
+            <p class="text-muted"></p>
         </div>
         
         <div id="errorMessage" class="error-message" style="display: none;"></div>
@@ -139,7 +166,7 @@
                     <small class="text-primary font-weight-bold">Format: domain\username</small>
                 </div>
                 <input type="text" class="form-control mt-1" id="username" name="username" 
-                       placeholder="e.g., emea\yourusername" required autofocus>
+                       placeholder="e.g., emea\yourusername" required autofocus autocomplete="username">
                 <div class="invalid-feedback" id="usernameError" style="display: none;">
                     Username must be in format "domain\username"
                 </div>
@@ -152,41 +179,34 @@
                         &#9432;
                     </span>
                 </label>
-                <input type="password" class="form-control" id="password" name="password" 
-                       placeholder="Enter your password" required>
-                <div class="form-check mt-2">
-                    <input type="checkbox" class="form-check-input" id="showPasswordToggle">
-                    <label class="form-check-label" for="showPasswordToggle">Show Password</label>
+                <div class="password-field-wrapper">
+                    <input type="password" class="form-control has-icon" id="password" name="password" 
+                           placeholder="Enter your password" required autocomplete="current-password">
+                    <i class="fas fa-eye password-toggle" id="passwordToggle" title="Show/Hide Password"></i>
                 </div>
             </div>
-            
-            <div class="form-group">
-                <label for="domain" class="form-label">
-                    Domain <small class="text-muted">(optional)</small>
-                </label>
-                <input type="text" class="form-control" id="domain" name="domain" 
-                       placeholder="e.g., emea">
-                <small class="form-text text-muted">
-                    Leave blank if domain is included in username
-                </small>
-            </div>
+
 
             <div class="form-check mb-3">
-                <input type="checkbox" class="form-check-input" id="useDatabridgeCreds">
-                <label class="form-check-label" for="useDatabridgeCreds">Use separate credentials for DATABRIDGE</label>
+                <input type="checkbox" class="form-check-input databridge-checkbox" id="useDatabridgeCreds">
+                <label class="form-check-label databridge-label" for="useDatabridgeCreds">
+                    Use separate credentials for DATABRIDGE
+                </label>
             </div>
-
             <div id="databridgeCreds" style="display: none;">
                 <div class="login-header pt-2">
                     <p class="text-muted">Enter your DATABRIDGE credentials</p>
                 </div>
                 <div class="form-group">
                     <label for="databridgeUsername" class="form-label">DATABRIDGE Username</label>
-                    <input type="text" class="form-control" id="databridgeUsername" name="databridgeUsername" placeholder="Enter DATABRIDGE username">
+                    <input type="text" class="form-control" id="databridgeUsername" name="databridgeUsername" placeholder="Enter DATABRIDGE username" autocomplete="off">
                 </div>
                 <div class="form-group">
                     <label for="databridgePassword" class="form-label">DATABRIDGE Password</label>
-                    <input type="password" class="form-control" id="databridgePassword" name="databridgePassword" placeholder="Enter DATABRIDGE password">
+                    <div class="password-field-wrapper">
+                        <input type="password" class="form-control has-icon" id="databridgePassword" name="databridgePassword" placeholder="Enter DATABRIDGE password" autocomplete="off">
+                        <i class="fas fa-eye password-toggle" id="databridgePasswordToggle" title="Show/Hide Password"></i>
+                    </div>
                 </div>
             </div>
         
@@ -209,17 +229,30 @@
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/js/all.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     
     <script>
         $(function () {
             //  tooltips
             $('[data-toggle="tooltip"]').tooltip();
 
-            // Show/hide password 
-            $('#showPasswordToggle').on('change', function () {
-                const passwordField = $('#password');
-                passwordField.attr('type', this.checked ? 'text' : 'password');
+            // Show/hide password with icon
+            function togglePasswordVisibility(passwordField, toggleIcon) {
+                if (passwordField.attr('type') === 'password') {
+                    passwordField.attr('type', 'text');
+                    toggleIcon.removeClass('fa-eye').addClass('fa-eye-slash');
+                } else {
+                    passwordField.attr('type', 'password');
+                    toggleIcon.removeClass('fa-eye-slash').addClass('fa-eye');
+                }
+            }
+
+            $('#passwordToggle').on('click', function () {
+                togglePasswordVisibility($('#password'), $(this));
+            });
+
+            $('#databridgePasswordToggle').on('click', function () {
+                togglePasswordVisibility($('#databridgePassword'), $(this));
             });
             
             //  DATABRIDGE creds
@@ -237,7 +270,6 @@
                 
                 const username = $('#username').val().trim();
                 const password = $('#password').val();
-                const domain = $('#domain').val().trim();
 
                 const useDatabridge = $('#useDatabridgeCreds').is(':checked');
                 const databridgeUsername = $('#databridgeUsername').val().trim();
@@ -249,16 +281,13 @@
                 $('#errorMessage').hide();
                 
                 // Validate username format 
-                const hasBackslash = username.includes('\\');
-                const hasDomain = domain.length > 0;
-                
-                if (!hasBackslash && !hasDomain) {
+                if (!username.includes('\\')) {
                     $('#username').addClass('is-invalid');
                     $('#usernameError').show();
                     return false;
                 }
                 
-                //  loading 
+                //  loading state
                 $('#loginSpinner').show();
                 $('#loginText').text('Connecting...');
                 $('button[type="submit"]').prop('disabled', true);
@@ -271,7 +300,6 @@
                     data: JSON.stringify({
                         username: username,
                         password: password,
-                        domain: domain,
                         use_databridge_creds: useDatabridge,
                         databridge_username: databridgeUsername,
                         databridge_password: databridgePassword
