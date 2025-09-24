@@ -339,13 +339,6 @@ def convert_sql():
                 name = anlsid_info.get('name', 'N/A')
                 curr = anlsid_info.get('curr', 'N/A')
 
-        metadata_lines = [
-            f"// Server: {server}",
-            f"// Database: {database}",
-            f"// Analysis ID: {anlsid or 'All'}",
-            f"// Name: {name if anlsid else 'All'}",
-            f"// Currency: {curr if anlsid else 'All'}"
-        ]
         
         if len(numeric_rows) > 0:
             #  columns are numeric 
@@ -366,8 +359,7 @@ def convert_sql():
         data_csv_content = output.getvalue()
 
         #  prepend metadata 
-        metadata_header = "\n".join(metadata_lines) + "\n"
-        csv_content = metadata_header + data_csv_content
+        csv_content = data_csv_content
         
         #  filename
         filename_parts = ['YLT']
@@ -444,21 +436,12 @@ def convert_batch():
                             name = anlsid_info.get('name', 'N/A')
                             curr = anlsid_info.get('curr', 'N/A')
                     
-                    metadata_lines = [
-                        f"\\\\ Server: {server}",
-                        f"\\\\ Database: {database}",
-                        f"\\\\ Analysis ID: {anlsid or 'All'}",
-                        f"\\\\ Name: {name if anlsid else 'All'}",
-                        f"\\\\ Currency: {curr if anlsid else 'All'}"
-                    ]
-
                     #  CSV content
                     output = io.StringIO()
                     ylt_df.to_csv(output, index=False, header=False)
                     data_csv_content = output.getvalue()
                     
-                    metadata_header = "\n".join(metadata_lines) + "\n"
-                    csv_content = metadata_header + data_csv_content
+                    csv_content = data_csv_content
 
                     #  filename
                     filename_parts = ['YLT']
@@ -514,6 +497,7 @@ def get_databases():
         return Response('<option value="">Please select a server</option>', mimetype='text/html')
     
     try:
+        
         username, password, domain = get_credentials_for_server(server)
         if not username or not password:
             logger.error("No database credentials found in session for the selected server type")
