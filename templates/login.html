@@ -3,15 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>PLT to YLT Converter - Login</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
+        * {
+            -webkit-box-sizing: border-box;
+            -moz-box-sizing: border-box;
+            box-sizing: border-box;
+        }
         body {
             background-color: #f8f8f8;
             font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            display: -webkit-box;
+            display: -ms-flexbox;
             display: flex;
+            -webkit-box-align: center;
+            -ms-flex-align: center;
             align-items: center;
+            -webkit-box-pack: center;
+            -ms-flex-pack: center;
             justify-content: center;
             min-height: 100vh;
             margin: 0;
@@ -51,6 +63,10 @@
             border-radius: 8px;
             padding: 14px 18px;
             font-size: 14px;
+            -webkit-transition: all 0.2s;
+            -moz-transition: all 0.2s;
+            -ms-transition: all 0.2s;
+            -o-transition: all 0.2s;
             transition: all 0.2s;
             outline: none;
         }
@@ -69,12 +85,18 @@
             padding: 12px;
             font-weight: 500;
             border-radius: 8px;
+            -webkit-transition: all 0.2s;
+            -moz-transition: all 0.2s;
+            -ms-transition: all 0.2s;
+            -o-transition: all 0.2s;
             transition: all 0.2s;
             box-shadow: 0 1px 2px rgba(0,0,0,0.08);
         }
         .btn-primary:hover {
             background-color: #42A5F5;
             border-color: #42A5F5;
+            -webkit-transform: translateY(-1px);
+            -ms-transform: translateY(-1px);
             transform: translateY(-1px);
             box-shadow: 0 2px 4px rgba(0,0,0,0.12);
         }
@@ -117,6 +139,8 @@
             position: absolute;
             right: 15px;
             top: 50%;
+            -webkit-transform: translateY(-50%);
+            -ms-transform: translateY(-50%);
             transform: translateY(-50%);
             cursor: pointer;
             color: #6c757d;
@@ -132,6 +156,8 @@
             padding-right: 45px;
         }
         .databridge-checkbox {
+            -webkit-transform: scale(1.2);
+            -ms-transform: scale(1.2);
             transform: scale(1.2);
             margin-right: 8px;
         }
@@ -168,7 +194,6 @@
                 <input type="text" class="form-control mt-1" id="username" name="username" 
                        placeholder="e.g., emea\yourusername" required autofocus autocomplete="username">
                 <div class="invalid-feedback" id="usernameError" style="display: none;">
-                    Username must be in format "domain\username"
                 </div>
             </div>
         
@@ -187,15 +212,9 @@
             </div>
 
 
-            <div class="form-check mb-3">
-                <input type="checkbox" class="form-check-input databridge-checkbox" id="useDatabridgeCreds">
-                <label class="form-check-label databridge-label" for="useDatabridgeCreds">
-                    Use separate credentials for DATABRIDGE
-                </label>
-            </div>
-            <div id="databridgeCreds" style="display: none;">
+            <div id="databridgeCreds">
                 <div class="login-header pt-2">
-                    <p class="text-muted">Enter your DATABRIDGE credentials</p>
+                    <p class="text-muted">Enter your DATABRIDGE credentials (optional)</p>
                 </div>
                 <div class="form-group">
                     <label for="databridgeUsername" class="form-label">DATABRIDGE Username</label>
@@ -255,15 +274,6 @@
                 togglePasswordVisibility($('#databridgePassword'), $(this));
             });
             
-            //  DATABRIDGE creds
-            $('#useDatabridgeCreds').on('change', function() {
-                if (this.checked) {
-                    $('#databridgeCreds').slideDown();
-                } else {
-                    $('#databridgeCreds').slideUp();
-                }
-            });
-
             // Form submission
             $('#loginForm').on('submit', function(e) {
                 e.preventDefault();
@@ -271,9 +281,9 @@
                 const username = $('#username').val().trim();
                 const password = $('#password').val();
 
-                const useDatabridge = $('#useDatabridgeCreds').is(':checked');
                 const databridgeUsername = $('#databridgeUsername').val().trim();
                 const databridgePassword = $('#databridgePassword').val();
+                const useDatabridge = databridgeUsername !== '' || databridgePassword !== '';
                 
                 //  validation states
                 $('#username').removeClass('is-invalid');
@@ -284,6 +294,13 @@
                 if (!username.includes('\\')) {
                     $('#username').addClass('is-invalid');
                     $('#usernameError').show();
+                    showError('Please use format: domain\\username (e.g., emea\\XYZ)');
+                    return false;
+                }
+                
+                // Validate password is not empty
+                if (!password || password.length === 0) {
+                    showError('Password is required');
                     return false;
                 }
                 
@@ -305,14 +322,18 @@
                         databridge_password: databridgePassword
                     }),
                     success: function(response) {
+                        console.log('Login response:', response);
                         if (response.success) {
+                            console.log('Login successful, redirecting to dashboard...');
                             window.location.href = '/dashboard';
                         } else {
+                            console.error('Login failed:', response.error);
                             showError(response.error || 'Login failed');
                         }
                     },
                     error: function(xhr) {
-                        const error = xhr.responseJSON ? xhr.responseJSON.error : 'Connection failed';
+                        console.error('Login error:', xhr);
+                        const error = xhr.responseJSON ? xhr.responseJSON.error : 'Connection failed. Please ensure the application is running.';
                         showError(error);
                     },
                     complete: function() {

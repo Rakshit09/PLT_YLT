@@ -14,9 +14,12 @@ import base64
 load_dotenv()
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here-change-in-production')
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'secret-key')
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 * 1024  # 5GB max file size
-app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True if using HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour session timeout
 
 DATABRIDGE = '103db9bcc5307a1d669c5f0946a36dfc.databridge.rms-pe.com'
 EDM_SERVERS = ('GREAZUK1DB051P', 'GREAZUK1DB101P', 'GREAZUK1DB181P', 'GREAZUK1DB201P', 'GREAZUK1DB251P', 'DATABRIDGE')
@@ -29,7 +32,6 @@ def get_engine(server: str, database: str, username: str, password: str, domain:
     try:
         if server == 'DATABRIDGE':
             server = DATABRIDGE
-
 
         # domain authentication
         if domain and domain.strip():
@@ -120,16 +122,25 @@ def convert_csv_plt_to_ylt(df):
         
         logger.info(f"Using columns - Period: {period_col}, Event: {event_col}, Loss: {loss_col}")
         
+        # Add aggregation
+        logger.info(f"Aggregating {len(df)} PLT rows into a YLT structure...")
+        
+        # aggregation rules
+        agg_rules = {loss_col: 'sum'}  # sum up all losses for the same event in the same year
+        
+        # group by periodid and eventid + apply the aggregation
+        ylt_df = df.groupby([period_col, event_col]).agg(agg_rules).reset_index()
+        
+        logger.info(f"Aggregation complete. Resulting YLT has {len(ylt_df)} rows.")
+        
         # YLT DataFrame in IFM format
         ylt = pd.DataFrame()
-        ylt['intYear'] = df[period_col]
-        ylt['dblLoss'] = df[loss_col]
+        ylt['intYear'] = ylt_df[period_col]
+        ylt['dblLoss'] = ylt_df[loss_col]
         ylt['CAT'] = 'CAT'
         ylt['zero'] = 0
         ylt['rate'] = 1
-        ylt['intEvent'] = df[event_col]
-        
-
+        ylt['intEvent'] = ylt_df[event_col]
         
         #  to string, remove trailing comma
         output = io.StringIO()
@@ -227,7 +238,7 @@ def convert_sql_plt_to_ylt(engine, database, server, anlsid=None, perspcode=None
             loss_col = df_columns_lower[pattern]
             break
             
-    for pattern in ['eventdate', 'event_date']:
+    for pattern in ['eventdate', 'event_date', ]:
         if pattern in df_columns_lower:
             eventdate_col = df_columns_lower[pattern]
             break
@@ -236,22 +247,40 @@ def convert_sql_plt_to_ylt(engine, database, server, anlsid=None, perspcode=None
         logger.error(f"Required columns not found. Available columns: {df.columns.tolist()}")
         raise ValueError(f"Required columns (periodID, eventID, loss) not found in table")
     
-    # Create YLT structure
-    ylt['intYear'] = df[period_col]
-    ylt['Loss'] = df[loss_col]
+    logger.info(f"Aggregating {len(df)} PLT rows into a YLT structure...")
+
+    #aggregation rules
+    agg_rules = {loss_col: 'sum' } # sum up all losses for the same event in the same year
+    
+    # if eventdate exists, use 'first'
+    if eventdate_col in df.columns: agg_rules[eventdate_col] = 'first'
+
+    # group by periodid and eventid + apply the aggregation
+    ylt_df = df.groupby([period_col, event_col]).agg(agg_rules).reset_index()
+    
+    logger.info(f"Aggregation complete. Resulting YLT has {len(ylt_df)} rows.")
+
+    # Create final YLT structure 
+    ylt = pd.DataFrame()
+    ylt['intYear'] = ylt_df[period_col]
+    ylt['Loss'] = ylt_df[loss_col]
     ylt['LossType'] = 'CAT'
     ylt['SD'] = 0
     
-    if eventdate_col:
-        df[eventdate_col] = pd.to_datetime(df[eventdate_col])
-        year_start = df[eventdate_col].apply(lambda x: datetime(x.year, 1, 1))
-        ylt['Day'] = ((df[eventdate_col] - year_start).dt.days / 365.0).round(6)
+    if eventdate_col in ylt_df.columns:
+        ylt_df[eventdate_col] = pd.to_datetime(ylt_df[eventdate_col])
+        
+        # Calculate day of year as a fraction
+        year_start = ylt_df[eventdate_col].dt.to_period('Y').dt.to_timestamp()
+        ylt['Day'] = ((ylt_df[eventdate_col] - year_start).dt.days + 1) / 365.0
+        ylt['Day'] = ylt['Day'].round(6)
     else:
-        ylt['Day'] = 1
+        # default to the start of the year (Day 1 / 365)
+        ylt['Day'] = 1/365.0 
+
+    ylt['eventid'] = ylt_df[event_col]
     
-    ylt['eventid'] = df[event_col]
-    
-    # Convert to IFM format
+    # convert to IFM format
     ylt_ifm = pd.DataFrame()
     ylt_ifm['intYear'] = ylt['intYear']
     ylt_ifm['dblLoss'] = ylt['Loss']
@@ -281,24 +310,40 @@ def index():
 def login():
     try:
         data = request.json
+        username = data.get('username', '')
+        password = data.get('password', '')
+        
+        # Parse domain\username format
+        domain = None
+        if '\\' in username:
+            domain, username = username.split('\\', 1)
+        
         session['credentials'] = {
-            'username': data.get('username'),
-            'password': data.get('password'),
-            'domain': data.get('domain')
+            'username': username,
+            'password': password,
+            'domain': domain
         }
+        
         if data.get('use_databridge_creds'):
             session['databridge_credentials'] = {
                 'username': data.get('databridge_username'),
                 'password': data.get('databridge_password')
             }
+        
+        logger.info(f"Login successful for user: {domain}\\{username}" if domain else f"Login successful for user: {username}")
         return jsonify({'success': True})
     except Exception as e:
+        logger.error(f"Login error: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/dashboard')
 def dashboard():
     if 'credentials' not in session:
+        logger.warning("Dashboard access attempted without credentials in session")
         return redirect(url_for('index'))
+    
+    creds = session.get('credentials', {})
+    logger.info(f"Dashboard accessed by user: {creds.get('domain')}\\{creds.get('username')}" if creds.get('domain') else f"Dashboard accessed by user: {creds.get('username')}")
     return render_template('dashboard.html', edm_servers=EDM_SERVERS)
 
 @app.route('/convert_sql', methods=['POST'])
@@ -307,7 +352,7 @@ def convert_sql():
         data = request.json
         creds = session.get('credentials', {})
         
-        #  connection parameters
+        # connection parameters
         server = data.get('server')
         database = data.get('database')
         anlsid = data.get('anlsid')
